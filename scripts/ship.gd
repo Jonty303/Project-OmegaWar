@@ -2,6 +2,7 @@ extends Node2D
 
 const COLLISION_RADIUS := 11.0
 const THRUST_ACCELERATION := 145.0
+const MAX_SPEED := 320.0
 const Weapon = preload("res://scripts/weapon.gd")
 const DamageModel = preload("res://scripts/combat_health.gd")
 
@@ -14,7 +15,7 @@ var max_shields := 2.0
 var heat := 0.0
 const MAX_HEAT := 100.0
 const COOLING_RATE := 12.0
-const FIRE_HEAT := 6.0
+const FIRE_HEAT := Weapon.HEAT_PER_SHOT
 var invulnerable := 2.0
 var thrusting := false
 
@@ -27,12 +28,18 @@ func step(delta: float, arena: Node2D) -> void:
 		velocity += Vector2.UP.rotated(rotation) * THRUST_ACCELERATION * thrust_strength * delta
 	if Input.get_action_strength("brake") > 0.02:
 		velocity *= exp(-3.0 * Input.get_action_strength("brake") * delta)
-	# No speed clamp: velocity only changes through deliberate forces.
+	# Maximum ship speed is enforced without any passive damping below it.
+	# Projectile speed is deliberately higher and ignores this velocity.
+	enforce_speed_limit()
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
+	enforce_speed_limit()
 	invulnerable = maxf(0.0, invulnerable - delta)
 	heat = maxf(0.0, heat - COOLING_RATE * delta)
 	weapon.tick(delta)
 	queue_redraw()
+
+func enforce_speed_limit() -> void:
+	velocity = velocity.limit_length(MAX_SPEED)
 
 func fired_primary() -> void:
 	# Heat is tracked for the new HUD; no heat lockout until weapons are tuned.

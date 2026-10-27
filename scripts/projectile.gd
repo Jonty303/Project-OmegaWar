@@ -5,6 +5,8 @@ const MAX_RANGE := 1150.0
 const DISSOLVE_SECONDS := 0.34
 
 var velocity := Vector2.ZERO
+var damage := 1.0
+var max_range := MAX_RANGE
 var visual_heading := Vector2.RIGHT
 var hostile := false
 var lifetime := 3.2

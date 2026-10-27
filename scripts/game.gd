@@ -135,8 +135,8 @@ func _physics_process(delta: float) -> void:
 		return
 	ship.step(delta, arena)
 	if Input.is_action_pressed("fire"):
-		for shot in ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation), ship.velocity):
-			spawn_shot(shot.position, shot.velocity, false)
+		for shot in ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation)):
+			spawn_shot(shot.position, shot.velocity, false, shot.damage, shot.max_range)
 			ship.fired_primary()
 	for enemy in enemies:
 		if enemy.is_repair_bot:
@@ -149,6 +149,8 @@ func _physics_process(delta: float) -> void:
 				enemy.fired()
 	resolve_collisions()
 	step_shots(delta)
+	# Weapon knockback and ramming can add impulses after ship.step.
+	ship.enforce_speed_limit()
 	if enemies.is_empty():
 		if not waiting_for_wave:
 			waiting_for_wave = true
@@ -236,7 +238,7 @@ func step_shots(delta: float) -> void:
 		var hit_target := false
 		if shot.lifetime > 0.0:
 			for substep in range(steps):
-				if shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
+				if shot.bounces_left <= 0 or shot.distance_travelled >= shot.max_range:
 					break
 				arena.move_shot(shot, delta / float(steps))
 				if shot.dissolving:
@@ -244,7 +246,7 @@ func step_shots(delta: float) -> void:
 				if shot.hostile:
 					if shot.position.distance_to(ship.position) < Ship.COLLISION_RADIUS + Projectile.HIT_RADIUS:
 						ship.velocity += shot.velocity.normalized() * 24.0
-						ship.hit()
+						ship.hit(shot.damage)
 						spawn_debris(shot.position, Color(0.5, 1.0, 1.0), 0.75)
 						hit_target = true
 						break
@@ -253,7 +255,7 @@ func step_shots(delta: float) -> void:
 						var enemy = enemies[j]
 						if shot.position.distance_to(enemy.position) < enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
 							enemy.velocity += shot.velocity.normalized() * 30.0
-							var destroyed: bool = enemy.take_damage(1.0)
+							var destroyed: bool = enemy.take_damage(shot.damage)
 							notify_drones_of_hit(enemy)
 							var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else Color(1.0, 0.5, 0.25)
 							spawn_debris(shot.position, tint, 0.8)
@@ -266,7 +268,7 @@ func step_shots(delta: float) -> void:
 		if hit_target:
 			shots.remove_at(i)
 			shot.queue_free()
-		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
+		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= shot.max_range:
 			shot.begin_disintegrate()
 
 func spawn_debris(at: Vector2, color: Color, strength: float = 1.0, amount: int = 8, lifespan: float = 0.42) -> void:
@@ -289,12 +291,14 @@ func step_effects(delta: float) -> void:
 			effects.remove_at(i)
 			effect.queue_free()
 
-func spawn_shot(origin: Vector2, velocity: Vector2, hostile: bool) -> void:
+func spawn_shot(origin: Vector2, velocity: Vector2, hostile: bool, damage: float = 1.0, range_limit: float = Projectile.MAX_RANGE) -> void:
 	if arena.blocked(origin, Projectile.HIT_RADIUS):
 		return
 	var shot := Projectile.new()
 	shot.position = origin
 	shot.velocity = velocity
+	shot.damage = damage
+	shot.max_range = range_limit
 	shot.sync_visual_heading()
 	shot.hostile = hostile
 	shots.append(shot)
@@ -365,7 +369,7 @@ func _draw() -> void:
 func update_hud() -> void:
 	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HOSTILES %02d" % [score, wave, enemies.size()]
 	var thrust: int = roundi(Input.get_action_strength("thrust") * 100.0)
-	status_hud.text = "SPEED %5.0f u/s    THRUST %3d%%    HEALTH %.0f/%.0f    SHIELDS %.0f/%.0f    HEAT %3.0f%%\nSECONDARY: NONE    AMMO: --    ABILITY COOLDOWN: --    |    W/A/S/D + SPACE, P/ESC PAUSE" % [
+	status_hud.text = "SPEED %5.0f u/s    THRUST %3d%%    HEALTH %.0f/%.0f    SHIELDS %.0f/%.0f    HEAT %3.0f%%\nPRIMARY: PULSE LASER  |  SECONDARY: NONE   AMMO: --   ABILITY COOLDOWN: --   P/ESC PAUSE" % [
 		ship.velocity.length(), thrust, ship.hull, ship.max_hull,
 		ship.shields, ship.max_shields, ship.heat / ship.MAX_HEAT * 100.0
 	]
