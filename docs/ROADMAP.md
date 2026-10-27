@@ -21,12 +21,17 @@ This **classic-baseline** branch is focused on game feel:
 - baseline primary **Pulse Laser** with 500-unit/s aim-aligned velocity
   independent of the ship's velocity, one damage, 1,150-unit range,
   0.29-second cadence, six heat per shot;
+- **Special retro burners** with front-shoulder flame exhaust and active
+  265-unit/s² deceleration, without adding passive drag;
+- limited-ammo **Unguided Rockets** on secondary input: six per run, full
+  inherited ship velocity, three wall ricochets, 555-unit range, and
+  95-unit blast radius damaging both teams with physical knockback;
 - projectiles that ricochet off walls and the core, but disintegrate
   against asteroids and apply a small kinetic push;
 - keyboard and controller inputs, pause, score and five-second wave restarts.
 
-There are intentionally **no power-ups, boost equipment, gravity-well enemies,
-special weapons or changing arenas** in this baseline.
+There are intentionally **no power-ups, boost equipment, gravity-well enemies
+or changing arenas** in this baseline beyond the new basic rocket secondary.
 
 ## Once movement and combat feel right
 

@@ -16,8 +16,9 @@ after the last enemy dies**, with **two to four Local Drones and one Repair Bot*
 | --- | --- | --- |
 | W / Up | Left stick up, D-pad up or A | Thrust |
 | A / D or Left / Right | Stick X or D-pad left/right | Rotate |
-| S / Down | Left stick down, D-pad down or B | Brake |
-| Space | X, RB or RT | Shoot |
+| S / Down / Shift | Left stick down, D-pad down or B (Special) | Retro burners / brake |
+| Space | X, RB or RT | Pulse Laser |
+| Q | LB | Launch unguided rocket |
 | P / Escape | Start | Pause / resume |
 | Enter | Y | Restart |
 
@@ -114,11 +115,43 @@ whose hull or shields are below full strength. The **blue shield bar is above th
 shield-first damage order. Bars are omitted when both pools are full.
 
 A **compact bottom HUD** displays live movement speed (world units/second),
-thrust input percentage, hull HP, shield HP and weapon heat. Primary shots
+thrust input percentage, retro burner input, hull HP, shield HP, weapon heat
+and the equipped secondary weapon's remaining ammunition and cooldown. Primary shots
 add six heat, cooling naturally at 12 heat per second. Heat is currently
 informational: it does not throttle the basic weapon. Slots for **secondary
-weapon/ammo and ability cooldown** explicitly show unavailable until those
-systems are added, rather than suggesting nonexistent equipment.
+weapon/ammo and ability cooldown** are represented by the active limited
+rocket count and its live launch cooldown.
+
+## Retro burners and secondary unguided rockets
+
+**Retro burners** operate on the **Special button** (Shift or joypad B);
+S, Down and left-stick-down remain braking aliases. Applying retro thrust
+fires a **tiny orange exhaust flame from each front shoulder** of the ship.
+These rockets actively decelerate the existing motion at **265 units/s²**,
+to a complete stop without reversing its course. They generate no passive
+drag when released; their effect is independent of ship orientation.
+
+The first secondary weapon is **Unguided Rockets** (Q or joypad LB).
+You have **six rockets per run**; the HUD displays remaining ammunition
+and a **0.85-second launch cooldown**. A rocket is launched at
+**350 units/s relative to the ship**, but unlike the Pulse Laser,
+**inherits the ship's full velocity**, including sideways momentum. Rockets
+fly ballistically with no homing or steering. Each has a **555-unit
+flight path limit**, three solid-wall/core bounces, and a 3.2-second
+maximum lifetime. Rockets bounce off walls and the core without losing
+speed, but **detonate on enemy, player or asteroid contact**, or when
+their range, bounce count or lifetime is exhausted.
+
+The explosion has a **95-unit blast radius** with up to **2 points of
+shield-first damage**, reduced by distance, and a substantial outward
+momentum impulse (235 units/s at the centre) applied to every nearby ship,
+including the player. Heavy asteroids are pushed by the blast. Self-inflicted
+rocket explosions have **no friendly-fire exemption**, including short-range
+and bounced-rocket explosions. Normal player invulnerability intervals still
+apply, as for other attacks. The blast appears as an expanding amber shock
+ring and debris, and can damage multiple enemies simultaneously. Rocket
+launch generates 10 heat. Rocket ammo is replenished on restart, not on
+each wave.
 
 ## Two heavy asteroids
 
@@ -156,7 +189,9 @@ shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
 shield-first damage and healing, Repair Bot targeting and tether, mixed waves,
 live bottom HUD, strict ship speed limit, fixed-speed inertia-independent
-Pulse Laser aiming/range/damage, body impulses, death explosions and debris, wall flashes,
+Pulse Laser aiming/range/damage, retro deceleration and visible exhaust,
+limited unguided inertia-inheriting rockets, blast splash/self-damage and
+momentum impulses, body impacts, death explosions and debris, wall flashes,
 bullet headings, range disintegration, controller pause and wave respawns.
 
 Manual playtest:
@@ -181,7 +216,15 @@ Manual playtest:
   cannot spot or shoot through it; circle the asteroid to ambush the drone.
 - Crash into a rock: it should drift slowly, block your path without hurting
   the ship, and respond more strongly to sustained thrust.
-- Shoot a rock: shots should be absorbed into dust, not reflected.
+- Shoot a rock with the Pulse Laser: pulses should be absorbed into dust,
+  not reflected. Fire an unguided rocket: it should explode and push the rock.
+- Test retro burners using Shift or controller B: two tiny FRONT flames should
+  appear, and the ship should slow to a full stop without changing heading.
+- Launch rockets while strafing sideways: they should inherit ship momentum,
+  unlike the Pulse Laser. Test wall/core rebounds and range-end explosions.
+- Fly into your own rocket or detonate one at close range: you should suffer
+  the same shield-first blast damage and knockback as enemies, and nearby
+  enemies should be hurt by the very same shockwave.
 - Escape behind the core or out of its sight: the drone should move to your
   **last seen position**, stop to scan around, then resume idle behaviour if
   it fails to reacquire.
