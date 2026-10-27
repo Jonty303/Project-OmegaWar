@@ -21,6 +21,8 @@ one long-range missile drone and one Repair Bot**.
 | Space | X, RB or RT | Pulse Laser |
 | Q | LB | Launch unguided rocket |
 | P / Escape | Start | Open / close pause menu |
+| Arrow keys or Tab | D-pad up/down or left stick up/down | Navigate pause menu |
+| Enter / Space | A (bottom face button) | Select focused menu option |
 | Pause menu: Reset Run | Pause menu: Reset Run | Restart from the menu only |
 
 The ship accelerates gently (145 units/s²) and **never slows down by itself**:
@@ -109,9 +111,11 @@ It has **3 hull HP and 1 shield point**.
 Its launcher fires a small homing missile only when the target is visible,
 the turret is aligned and the player is **275–395 units away**. Fire
 interval averages **3.15 seconds**. The missile flies at **375 units/s**,
-turns at up to **2.85 radians/s**, and has a maximum **900-unit flight
+turns at up to **2.85 radians/s**, and has a maximum **780-unit flight
 distance** or **3-second life**. It travels toward the player's current
-position without phasing through barriers.
+position without phasing through barriers. Launch velocity is always
+determined by the missile itself, without inheriting the firing drone's
+movement or drift.
 
 **Homing missiles explode on their first physical collision.** That
 includes the player, either enemy variant, Repair Bots, asteroids, outer
@@ -126,11 +130,30 @@ The normal ship damage cooldown applies to the player.
 **Reset Run is no longer bound to Enter or controller Y during play.**
 Press **P, Escape or controller Start** to open a proper pause overlay
 with clickable, keyboard- and gamepad-navigable **Resume** and **Reset Run**
-buttons. Movement, projectiles, missiles, waves and effects freeze while
+buttons. Use the **D-pad or left stick** to move focus and the **A button**
+to confirm the focused option. This also works in the Ship Lost menu.
+Movement, projectiles, missiles, waves and effects freeze while
 the menu is open. Resume hides it and continues the existing run.
 After a ship's death explosion, the menu opens automatically as
 **Ship Lost**, with Resume disabled and Reset Run available. This makes
 restart deliberate rather than an accidental key press.
+
+## Repair Bot survival behaviour
+
+Repair Bots now **evade incoming fire**, not just direct hits. A Pulse Laser
+or rocket travelling toward the bot within **165 units** and a narrow
+**34-unit corridor** triggers an evasive move if the line of sight is clear.
+A surviving Repair Bot struck directly also reacts. For approximately
+**2.8 seconds**, it interrupts healing and moves at up to **132 units/s**
+toward a fellow armed drone, using the arena's obstacle-aware pathfinding.
+It retains its existing patient assignment and resumes care afterward.
+With no surviving armed drone to shelter near, it has no viable retreat.
+
+**Once every armed enemy has been eliminated, any surviving Repair Bots
+self-destruct automatically** in small green debris/shockwave bursts.
+This prevents a harmless support-only remnant from extending the wave.
+The self-destruction does not award unearned score or damage the player;
+the standard five-second next-wave countdown follows.
 
 ## Repair Bots, shield pools and status displays
 
@@ -176,10 +199,10 @@ drag when released; their effect is independent of ship orientation.
 
 The first secondary weapon is **Unguided Rockets** (Q or joypad LB).
 You have **six rockets per run**; the HUD displays remaining ammunition
-and a **0.85-second launch cooldown**. A rocket is launched at
-**350 units/s relative to the ship**, but unlike the Pulse Laser,
-**inherits the ship's full velocity**, including sideways momentum. Rockets
-fly ballistically with no homing or steering. Each has a **555-unit
+and a **0.85-second launch cooldown**. A rocket is launched at a fixed
+**350 units/s strictly along the gun's forward direction**. Like the
+Pulse Laser, it **does not inherit ship velocity or sideways momentum**.
+Rockets fly ballistically with no homing or steering. Each has a **555-unit
 flight path limit**, three solid-wall/core bounces, and a 3.2-second
 maximum lifetime. Rockets bounce off walls and the core without losing
 speed, but **detonate on enemy, player or asteroid contact**, or when
@@ -230,16 +253,18 @@ turret tracking, witnessed allied-hit alerts, slow sweeping sentry turret
 and last-sighting investigation, long-range standoff drones and contact
 exploding homing missiles, menu-only reset with pause freeze,
 stronger wall rebounds, shield-bar ordering, worldwide Repair
-Bot awareness, locked healing assignments and faster response,
+Bot awareness, incoming-fire evasion, lone-support self-destruction,
+locked healing assignments and faster response,
 rock/core occlusion and heavy asteroid impulses,
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
 shield-first damage and healing, Repair Bot targeting and tether, mixed waves,
 live bottom HUD, strict ship speed limit, fixed-speed inertia-independent
 Pulse Laser aiming/range/damage, retro deceleration and visible exhaust,
-limited unguided inertia-inheriting rockets, blast splash/self-damage and
+limited unguided inertia-independent rockets, blast splash/self-damage and
 momentum impulses, body impacts, death explosions and debris, wall flashes,
-bullet headings, range disintegration, controller pause and wave respawns.
+bullet headings, shortened homing-missile range, range disintegration,
+controller A/joypad menu navigation, pause and wave respawns.
 
 Manual playtest:
 - Thrust, release and coast; ensure no unexplained drift reduction.
@@ -269,8 +294,9 @@ Manual playtest:
   not reflected. Fire an unguided rocket: it should explode and push the rock.
 - Test retro burners using Shift or controller B: two tiny FRONT flames should
   appear, and the ship should slow to a full stop without changing heading.
-- Launch rockets while strafing sideways: they should inherit ship momentum,
-  unlike the Pulse Laser. Test wall/core rebounds and range-end explosions.
+- Launch rockets while strafing sideways: they should follow the ship's
+  barrel direction only, just like the Pulse Laser; no inherited drift.
+  Test wall/core rebounds and range-end explosions.
 - Fly into your own rocket or detonate one at close range: you should suffer
   the same shield-first blast damage and knockback as enemies, and nearby
   enemies should be hurt by the very same shockwave.
@@ -290,17 +316,23 @@ Manual playtest:
 - Approach an indigo long-range drone: it should retreat to preserve its
   preferred firing distance, then launch a small missile if it can see you.
   Dodge behind an asteroid, core or arena boundary: a homing missile that
-  strikes any barrier must detonate on contact, never ricochet.
-- Press P/Escape/Start during play and use Resume or Reset Run in the pause
-  menu. Enter and Y outside the menu must not restart the game.
+  strikes any barrier must detonate on contact, never ricochet. Its reduced
+  780-unit flight range should also limit extremely prolonged pursuit.
+- Press P/Escape/Start during play and use the D-pad or left stick to
+  highlight Resume or Reset Run, then press controller A to select. Verify
+  that controller A also selects Reset Run after ship death. Enter and Y
+  outside the menu must not restart the game.
 - Shoot a shielded Repair Bot: its blue shield pool must reach zero before
   the green health pool is damaged. The shield/health mini-bars should appear.
 - Injure a Local Drone anywhere in the arena: a Repair Bot should respond
   at up to 105 units/s, then tether once within 170 units. Injure a second,
   closer drone; the bot should finish healing its first patient before
-  switching. Destroy the patient to release its assignment.
+  switching. Shoot toward a Repair Bot: it should break the tether,
+  flee toward an allied combat drone, then resume its original patient.
+  Destroy all armed drones: remaining Repair Bots should self-destruct and
+  the five-second wave countdown should begin.
 - Check the bottom HUD updates with speed, thrust percentage, health,
-  shields and heat. Secondary ammo/cooldown should explicitly say unavailable.
+  shields and heat, plus live rocket ammunition and cooldown.
 - Destroy a drone and verify its debris burst.
 - Clear a wave, pause during the countdown, then watch 2–3 Local Drones,
   one long-range missile drone and one Repair Bot return.

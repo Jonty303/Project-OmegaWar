@@ -14,11 +14,13 @@ This **classic-baseline** branch is focused on game feel:
   sensors, subject to cover occlusion;
 - one indigo long-range Local Drone per wave, maintaining 275–365 units
   from the player and launching 375-unit/s guided missiles from 275–395
-  units when in sight. Missiles have a 48-unit blast and detonate against
-  any physical barrier, enemy or player without bouncing;
+  units when in sight. Missiles have a 780-unit maximum flight path,
+  no launch velocity inheritance, and a 48-unit blast; they detonate
+  against any physical barrier, enemy or player without bouncing;
 - one unarmed Repair Bot per wave with global awareness of damaged allies,
   a locked patient until fully healed or destroyed, 105-unit/s movement
-  and a 170-unit electrical healing tether;
+  and a 170-unit electrical healing tether. Repair Bots flee toward armed
+  allies when shot at and self-destruct if only support units remain;
 - separate hull HP and shield HP, shield-first damage, shield-above-hull mini-bars,
   and a compact bottom HUD for speed, thrust, health, shields, heat and
   placeholders for secondary ammunition and ability cooldown;
@@ -29,13 +31,15 @@ This **classic-baseline** branch is focused on game feel:
   0.29-second cadence, six heat per shot;
 - **Special retro burners** with front-shoulder flame exhaust and active
   265-unit/s² deceleration, without adding passive drag;
-- limited-ammo **Unguided Rockets** on secondary input: six per run, full
-  inherited ship velocity, three wall ricochets, 555-unit range, and
+- limited-ammo **Unguided Rockets** on secondary input: six per run,
+  fixed 350-unit/s forward speed independent of ship velocity,
+  three wall ricochets, 555-unit range, and
   95-unit blast radius damaging both teams with physical knockback;
 - projectiles that ricochet off walls and the core, but disintegrate
   against asteroids and apply a small kinetic push;
-- keyboard and controller inputs, a Resume / Reset Run pause menu instead
-  of a global restart key, score and five-second wave restarts.
+- keyboard and controller inputs, a Resume / Reset Run pause menu with
+  D-pad/stick navigation and controller A selection instead of a global
+  restart key, score and five-second wave restarts.
 
 There are intentionally **no power-ups, boost equipment, gravity-well enemies
 or changing arenas** in this baseline beyond the new basic rocket secondary.
@@ -65,6 +69,7 @@ obstacles.
 3. Bullet ricochets behave predictably against every arena surface.
 4. Ramming enemies transfers momentum, emits debris, and can cause damage.
    Asteroid impacts never damage ships and persistent thrust slowly moves them.
-5. Controller input, menu-only restart, pause and wave timing are reliable;
+5. Controller A selects focused menu options, menu-only restart, pause
+   and wave timing are reliable;
    missile contact with walls, core, asteroids and all ships detonates
    instead of bouncing.
