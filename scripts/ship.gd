@@ -2,7 +2,6 @@ extends Node2D
 
 const COLLISION_RADIUS := 11.0
 const THRUST_ACCELERATION := 145.0
-const MAX_SPEED := 275.0
 const Weapon = preload("res://scripts/weapon.gd")
 
 var weapon := Weapon.new()
@@ -21,7 +20,7 @@ func step(delta: float, arena: Node2D) -> void:
 		velocity += Vector2.UP.rotated(rotation) * THRUST_ACCELERATION * thrust_strength * delta
 	if Input.get_action_strength("brake") > 0.02:
 		velocity *= exp(-3.0 * Input.get_action_strength("brake") * delta)
-	velocity = velocity.limit_length(MAX_SPEED)
+	# No speed clamp: velocity only changes through deliberate forces.
 	var before := velocity
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 	if (velocity - before).length() > 20.0:
