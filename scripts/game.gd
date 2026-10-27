@@ -226,9 +226,11 @@ func _physics_process(delta: float) -> void:
 		return
 	arena.advance_flashes(delta)
 	step_effects(delta)
+	arena.set_drone_bodies(enemies)
 	var moving_bodies: Array[Node2D] = [ship]
 	moving_bodies.append_array(enemies)
 	arena.advance_asteroids(delta, moving_bodies)
+	resolve_drone_spacing()
 	if dying:
 		death_timer = maxf(0.0, death_timer - delta)
 		if death_timer <= 0.0:
@@ -256,6 +258,7 @@ func _physics_process(delta: float) -> void:
 					spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * 225.0, true)
 				enemy.fired()
 	resolve_collisions()
+	resolve_drone_spacing()
 	step_shots(delta)
 	step_rockets(delta)
 	step_homing_missiles(delta)
@@ -285,6 +288,48 @@ func begin_player_death() -> void:
 	# into moving wreckage before the game-over banner appears.
 	spawn_debris(ship.position, Color(0.3, 1.0, 0.95), 2.1, 32, DEATH_EXPLOSION_TIME)
 	arena.apply_blast(ship.position, 850.0, 180.0)
+
+func resolve_drone_spacing() -> void:
+	# Spatial separation fixes forced overlaps from blasts, asteroid pushes,
+	# and impacts; unlike ramming the player this deals no contact damage.
+	for iteration in range(8):
+		var changed := false
+		for i in range(enemies.size()):
+			var first = enemies[i]
+			if not is_instance_valid(first) or first.health <= 0.0:
+				continue
+			for j in range(i + 1, enemies.size()):
+				var second = enemies[j]
+				if not is_instance_valid(second) or second.health <= 0.0:
+					continue
+				var diff: Vector2 = second.position - first.position
+				var distance: float = diff.length()
+				var minimum: float = first.COLLISION_RADIUS + second.COLLISION_RADIUS + arena.DRONE_HARD_GAP
+				if distance >= minimum:
+					continue
+				changed = true
+				var normal: Vector2 = diff / distance if distance > 0.0001 else Vector2.RIGHT.rotated(float(i + j) * 1.19)
+				var correction: Vector2 = normal * (minimum - distance + 0.02)
+				var half: Vector2 = correction * 0.5
+				var first_ok: bool = not arena.blocked(first.position - half, first.COLLISION_RADIUS)
+				var second_ok: bool = not arena.blocked(second.position + half, second.COLLISION_RADIUS)
+				if first_ok and second_ok:
+					first.position -= half
+					second.position += half
+				elif first_ok:
+					if not arena.blocked(first.position - correction, first.COLLISION_RADIUS):
+						first.position -= correction
+				elif second_ok:
+					if not arena.blocked(second.position + correction, second.COLLISION_RADIUS):
+						second.position += correction
+				var closing: float = (first.velocity - second.velocity).dot(normal)
+				if closing > 0.0:
+					first.velocity -= normal * closing * 0.5
+					second.velocity += normal * closing * 0.5
+				first.queue_redraw()
+				second.queue_redraw()
+		if not changed:
+			break
 
 func resolve_collisions() -> void:
 	# Impulse-based ship/enemy impacts: separation, momentum transfer and
@@ -659,6 +704,7 @@ func start_wave() -> void:
 		bot.position = safe_position(RepairBot.COLLISION_RADIUS)
 	enemies.append(bot)
 	add_child(bot)
+	arena.set_drone_bodies(enemies)
 
 func _draw() -> void:
 	draw_rect(Rect2(0, 743, 1200, 57), Color(0.035, 0.065, 0.10, 0.96), true)

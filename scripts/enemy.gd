@@ -5,11 +5,11 @@ const COLLISION_RADIUS := 14.0
 const DamageModel = preload("res://scripts/combat_health.gd")
 const SHORT_VISION_RANGE := 90.0
 const LONG_VISION_RANGE := 400.0
-const FRONT_VISION_HALF_ANGLE := deg_to_rad(25.0)
+const FRONT_VISION_HALF_ANGLE := deg_to_rad(30.0)
 const WEAPON_RANGE := 240.0
 const IDLE_TURRET_RATE := 0.80
-const IDLE_SWEEP := 0.65
-const LOOK_SWEEP := 1.30
+const IDLE_SWEEP := 0.85
+const LOOK_SWEEP := 1.55
 const LOOK_AROUND_SECONDS := 6.0
 const SEARCH_ARRIVAL_RADIUS := 17.0
 const TRAVEL_SPEED := 54.0
@@ -191,6 +191,7 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 				var runway := maxf(0.0, position.distance_to(search_goal) - SEARCH_ARRIVAL_RADIUS)
 				approach_speed = minf(TRAVEL_SPEED, sqrt(2.0 * ACCELERATION * runway))
 			desired_velocity = position.direction_to(waypoint) * approach_speed
+	desired_velocity = arena.avoid_drones(self, desired_velocity)
 	velocity = velocity.move_toward(desired_velocity, ACCELERATION * delta)
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 

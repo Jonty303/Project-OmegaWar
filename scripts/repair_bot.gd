@@ -125,6 +125,7 @@ func step_support(delta: float, allies: Array[Node2D], arena: Node2D) -> void:
 			evade_remaining = 0.0
 		# Do not heal while actively evading incoming fire.
 		if evade_remaining > 0.0:
+			destination_velocity = arena.avoid_drones(self, destination_velocity)
 			velocity = velocity.move_toward(destination_velocity, ACCELERATION * delta)
 			velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 			queue_redraw()
@@ -138,6 +139,7 @@ func step_support(delta: float, allies: Array[Node2D], arena: Node2D) -> void:
 			var waypoint: Vector2 = arena.approach_waypoint(position, patient.position, COLLISION_RADIUS)
 			if position.distance_to(waypoint) > 8.0:
 				destination_velocity = position.direction_to(waypoint) * MOVE_SPEED
+	destination_velocity = arena.avoid_drones(self, destination_velocity)
 	velocity = velocity.move_toward(destination_velocity, ACCELERATION * delta)
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 	queue_redraw()

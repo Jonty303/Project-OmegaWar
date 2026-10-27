@@ -7,11 +7,78 @@ const BOUNDS := Rect2(40, 110, 1120, 630)
 const CORE := Rect2(490, 330, 220, 190)
 const FLASH_SECONDS := 0.26
 const WALL_RESTITUTION := 0.985
+const DRONE_GAP := 12.0
+const DRONE_HARD_GAP := 2.0
+const DRONE_LOOKAHEAD := 82.0
 
 signal wall_bounced(at: Vector2, speed: float)
 signal asteroid_struck(at: Vector2, power: float)
 
 var asteroids: Array[Node2D] = []
+var drone_bodies: Array[Node2D] = []
+
+func set_drone_bodies(bodies: Array[Node2D]) -> void:
+	drone_bodies = bodies.duplicate()
+
+func drone_free(point: Vector2, radius: float, self_body: Node2D = null, margin: float = DRONE_HARD_GAP) -> bool:
+	for other in drone_bodies:
+		if other == self_body or not is_instance_valid(other) or other.health <= 0.0:
+			continue
+		if point.distance_squared_to(other.position) < pow(radius + other.COLLISION_RADIUS + margin, 2.0):
+			return false
+	return true
+
+func avoid_drones(actor: Node2D, desired: Vector2) -> Vector2:
+	# Steer around the other drones rather than navigating to their centres.
+	# Idle sentries can remain still unless physically displaced.
+	if desired.length_squared() < 0.0001:
+		return desired
+	var heading: Vector2 = desired.normalized()
+	var strongest := 0.0
+	var steering := Vector2.ZERO
+	for other in drone_bodies:
+		if other == actor or not is_instance_valid(other) or other.health <= 0.0:
+			continue
+		var toward: Vector2 = other.position - actor.position
+		var forward: float = toward.dot(heading)
+		var distance: float = toward.length()
+		var clearance: float = actor.COLLISION_RADIUS + other.COLLISION_RADIUS + DRONE_GAP
+		if distance > DRONE_LOOKAHEAD + clearance or forward < -clearance:
+			continue
+		var lateral: float = heading.cross(toward)
+		if absf(lateral) > clearance + 10.0:
+			continue
+		var strength: float = clampf(1.0 - maxf(0.0, forward) / (DRONE_LOOKAHEAD + clearance), 0.0, 1.0)
+		strength *= clampf(1.0 - absf(lateral) / (clearance + 10.0), 0.0, 1.0)
+		if distance < clearance:
+			strength = 1.0
+		if strength <= strongest:
+			continue
+		strongest = strength
+		var tangent: Vector2 = Vector2(-heading.y, heading.x)
+		var side := -1.0 if lateral > 0.0 else 1.0
+		if absf(lateral) < 0.1:
+			side = -1.0 if actor.get_instance_id() < other.get_instance_id() else 1.0
+		steering = tangent * side
+		if distance < clearance and distance > 0.01:
+			steering = (steering * 0.45 - toward.normalized()).normalized()
+	if strongest <= 0.0:
+		return desired
+	return (heading * (1.0 - strongest * 0.88) + steering * strongest * 1.45).normalized() * desired.length()
+
+func drone_move_clear(actor: Node2D, current: Vector2, next: Vector2, radius: float) -> bool:
+	# Physical clearance is enforced in addition to steering.
+	if not drone_bodies.has(actor):
+		return true
+	for other in drone_bodies:
+		if other == actor or not is_instance_valid(other) or other.health <= 0.0:
+			continue
+		var clearance: float = radius + other.COLLISION_RADIUS + DRONE_HARD_GAP
+		var current_sq: float = current.distance_squared_to(other.position)
+		var next_sq: float = next.distance_squared_to(other.position)
+		if next_sq < clearance * clearance and next_sq < current_sq - 0.00001:
+			return false
+	return true
 
 # Five sections along horizontal outer walls, three along vertical sides.
 # Segments also outline the central obstacle, each with independent flashes.
@@ -212,6 +279,8 @@ func move_body(body: Node2D, velocity: Vector2, radius: float, delta: float) -> 
 			velocity.x *= -WALL_RESTITUTION
 		elif asteroid_at(next, radius) != null:
 			velocity = asteroid_body_impact(next, velocity, radius)
+		elif not drone_move_clear(body, body.position, next, radius):
+			velocity.x = 0.0
 		else:
 			body.position = next
 		next = body.position + Vector2(0, velocity.y * delta / steps)
@@ -220,6 +289,8 @@ func move_body(body: Node2D, velocity: Vector2, radius: float, delta: float) -> 
 			velocity.y *= -WALL_RESTITUTION
 		elif asteroid_at(next, radius) != null:
 			velocity = asteroid_body_impact(next, velocity, radius)
+		elif not drone_move_clear(body, body.position, next, radius):
+			velocity.y = 0.0
 		else:
 			body.position = next
 	return velocity
