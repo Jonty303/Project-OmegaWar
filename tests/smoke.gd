@@ -18,6 +18,20 @@ func run() -> void:
 	game.set_physics_process(false)
 
 	check(game.ship.hull == 3 and game.enemies.is_empty(), "Clean initial state")
+	check(game.ship.shields == 2.0 and game.ship.max_shields == 2.0, "Player starts with separate shields")
+	var DamageModel = load("res://scripts/combat_health.gd")
+	var shield_hit: Vector2 = DamageModel.apply(3.0, 2.0, 1.0, 2.0)
+	check(shield_hit.is_equal_approx(Vector2(3.0, 0.0)), "Weapon shield modifier leaves hull intact")
+	var overflow: Vector2 = DamageModel.apply(3.0, 1.0, 2.0)
+	check(overflow.is_equal_approx(Vector2(2.0, 0.0)), "Only overflow damages hull after shield depletion")
+	var cannot_bypass: Vector2 = DamageModel.apply(3.0, 2.0, 1.0, 0.0, 1.0)
+	check(cannot_bypass.is_equal_approx(Vector2(3.0, 2.0)), "Hull always protected by active shields")
+	check(game.status_hud.text.contains("SPEED") and game.status_hud.text.contains("THRUST") and game.status_hud.text.contains("HEAT"), "Bottom HUD shows motion and heat")
+	check(game.status_hud.text.contains("SECONDARY: NONE") and game.status_hud.text.contains("COOLDOWN"), "HUD distinguishes unavailable secondary and cooldown")
+	game.ship.fired_primary()
+	game.update_hud()
+	check(game.ship.heat > 0.0 and game.status_hud.text.contains("HEAT"), "Primary fire raises live heat readout")
+	game.ship.heat = 0.0
 	check(game.arena.segments.size() == 28, "Segmented outer walls and core")
 	check(game.Enemy.VISION_RANGE == 250.0 and game.Enemy.WEAPON_RANGE == 200.0, "Local Drone has reduced ambush-friendly ranges")
 	check(game.arena.asteroids.size() == 2, "Exactly two permanent asteroids")
@@ -159,6 +173,42 @@ func run() -> void:
 	behind_rock.free()
 	sentry.free()
 
+
+	# Repair Bot is a different, unarmed support unit with slow movement.
+	var medic = game.RepairBot.new()
+	medic.position = Vector2(300, 245)
+	var patient = game.Enemy.new()
+	patient.position = Vector2(390, 245)
+	patient.health = 1.0
+	game.add_child(medic)
+	game.add_child(patient)
+	var allies: Array[Node2D] = [medic, patient]
+	var initial_health: float = patient.health
+	medic.step_support(0.5, allies, game.arena)
+	check(medic.is_repair_bot and not medic.has_method("ready_to_fire"), "Repair Bot carries no weapon")
+	check(medic.tether_target == patient, "Nearby ally receives electric repair tether")
+	check(patient.health > initial_health and patient.health <= patient.max_health, "Repair Bot restores allied hull")
+	check(medic.velocity.is_zero_approx(), "Repair Bot stays close while healing")
+	patient.health = patient.max_health
+	patient.shields = patient.max_shields
+	medic.step_support(0.1, allies, game.arena)
+	check(medic.tether_target == null, "Tether disengages after repair")
+	medic.shields = 1.0
+	var medic_hull: float = medic.health
+	medic.take_damage(1.0)
+	check(medic.shields == 0.0 and medic.health == medic_hull, "Repair Bot shields deplete before six hull HP")
+	medic.take_damage(1.0)
+	check(medic.health == medic_hull - 1.0, "Unshielded Repair Bot loses hull")
+	medic.shields = medic.max_shields
+	medic.health = medic.max_health
+	patient.position = Vector2(950, 245)
+	patient.health = 1.0
+	medic.step_support(0.25, allies, game.arena)
+	check(medic.tether_target == null and medic.velocity.length() > 0.0, "Repair Bot moves slowly toward distant ally")
+	check(medic.velocity.length() <= medic.MOVE_SPEED + 0.01, "Repair Bot movement is methodical")
+	patient.free()
+	medic.free()
+
 	# Integrate sentry fire through the main coordinator.
 	var shooter = game.Enemy.new()
 	shooter.position = Vector2(250, 230)
@@ -187,6 +237,17 @@ func run() -> void:
 		drone.free()
 	game.enemies.clear()
 
+	# Mixed waves include the support bot, which does not fire.
+	game.start_wave()
+	var repair_count := 0
+	for member in game.enemies:
+		if member.is_repair_bot:
+			repair_count += 1
+	check(repair_count == 1 and game.enemies.size() >= 3 and game.enemies.size() <= 5, "Wave has one Repair Bot and a few Local Drones")
+	for member in game.enemies:
+		member.free()
+	game.enemies.clear()
+
 	# Ramming applies an impulse and draws a particle cloud.
 	var target = game.Enemy.new()
 	target.position = Vector2(320, 210)
@@ -197,6 +258,7 @@ func run() -> void:
 	game.ship.position = Vector2(297, 210)
 	game.ship.velocity = Vector2(150, 0)
 	game.ship.invulnerable = 0.0
+	game.ship.shields = 0.0 # Test a hull-only ram after shields have been depleted.
 	var particles_before: int = game.effects.size()
 	game.resolve_collisions()
 	check(game.ship.velocity.x < 150.0 and target.velocity.x > 0.0, "Impulse shares momentum")
@@ -226,6 +288,7 @@ func run() -> void:
 
 	# Final player hit creates a large, visible death cloud BEFORE game over.
 	game.ship.hull = 1
+	game.ship.shields = 0.0
 	game.ship.invulnerable = 0.0
 	check(game.ship.hit(), "Final hull hit registered")
 	game._physics_process(0.01)
