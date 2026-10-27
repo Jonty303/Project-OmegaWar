@@ -191,6 +191,26 @@ func reset() -> void:
 	pause_menu_layer.visible = false
 	update_hud()
 
+func _input(event: InputEvent) -> void:
+	if not paused:
+		return
+	if event is InputEventKey and event.is_echo():
+		return
+	# Handle menu navigation at the input stage, before the underlying
+	# ship/GUI shortcuts. Focused mouse buttons still use pressed signals.
+	if event.is_action_pressed("ui_down"):
+		pause_reset_button.grab_focus()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ui_up"):
+		(pause_reset_button if game_over else pause_resume_button).grab_focus()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ui_accept"):
+		if game_over or pause_reset_button.has_focus():
+			reset_from_menu()
+		else:
+			resume_from_menu()
+		get_viewport().set_input_as_handled()
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_echo():
 		return
