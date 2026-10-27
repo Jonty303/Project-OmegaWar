@@ -175,6 +175,7 @@ func reset() -> void:
 	effects.clear()
 	arena.reset_flashes()
 	arena.reset_asteroids()
+	arena.set_drone_bodies(enemies)
 	if is_instance_valid(ship):
 		ship.free()
 	ship = Ship.new()
@@ -660,6 +661,22 @@ func safe_position(radius: float = Enemy.COLLISION_RADIUS) -> Vector2:
 				break
 		if not near_enemy:
 			return point
+	# Random spawn attempts are normally sufficient. A deterministic
+	# search guarantees the fallback also respects all drone footprints.
+	for y in range(165, 705, 46):
+		for x in range(95, 1110, 46):
+			var candidate := Vector2(x, y)
+			if arena.blocked(candidate, radius + 8.0) or candidate.distance_to(ship.position) <= 220.0:
+				continue
+			var free := true
+			for other in enemies:
+				if candidate.distance_to(other.position) < radius + other.COLLISION_RADIUS + 30.0:
+					free = false
+					break
+			if free:
+				return candidate
+	# This only occurs if the arena is completely full. Callers can
+	# still use normal spawn logic in the ordinary 4-5 enemy waves.
 	return Vector2(1050, 650) if ship.position.x < 600 else Vector2(150, 650)
 
 func start_wave() -> void:

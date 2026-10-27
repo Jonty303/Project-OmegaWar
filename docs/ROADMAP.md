@@ -8,7 +8,8 @@ This **classic-baseline** branch is focused on game feel:
   without passive decay; 98.5% wall/core bounce restitution (but independent
   asteroid/ship impact physics);
 - two to three Local Drones: 90-unit omnidirectional vision and a 400-unit,
-  50-degree barrel-facing cone, 240-unit weapon reach, slow idle turret sweeps,
+  60-degree barrel-facing cone, 240-unit weapon reach, 0.85-radian idle
+  and 1.55-radian search turret sweeps,
   rare about-faces, 7.5-radian/s tracking, last-sighting and incoming-shot
   bearing investigation, and witnessing ally hits only within their real
   sensors, subject to cover occlusion;
@@ -17,6 +18,8 @@ This **classic-baseline** branch is focused on game feel:
   units when in sight. Missiles have a 780-unit maximum flight path,
   no launch velocity inheritance, and a 48-unit blast; they detonate
   against any physical barrier, enemy or player without bouncing;
+- shared all-drone collision clearance, 12-unit preferred personal space,
+  and separation of forced overlaps caused by blasts or obstacle shoves;
 - one unarmed Repair Bot per wave with global awareness of damaged allies,
   a locked patient until fully healed or destroyed, 105-unit/s movement
   and a 170-unit electrical healing tether. Repair Bots flee toward armed
@@ -68,6 +71,7 @@ obstacles.
    attacker's exact coordinates.
 3. Bullet ricochets behave predictably against every arena surface.
 4. Ramming enemies transfers momentum, emits debris, and can cause damage.
+   Drones avoid each other and never occupy the same footprint;
    Asteroid impacts never damage ships and persistent thrust slowly moves them.
 5. Controller A selects focused menu options, menu-only restart, pause
    and wave timing are reliable;

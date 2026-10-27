@@ -36,13 +36,15 @@ other ships and heavy asteroids remains governed by their own collision rules.
 The initial enemy is the **Local Drone**, a slow, territorial sentry. It spawns
 at rest and uses **two separate vision zones**: close-range 360-degree
 awareness within **90 units**, and a **400-unit forward view cone**, 50 degrees
-wide, aligned with its visible gun barrel. The central core and asteroids block
+wide **(now 60 degrees, rather than 50)**, aligned with its visible gun barrel. The central core and asteroids block
 both sensors. Its independently rotating turret now tracks at **7.5
 radians/second** when alerted or aiming at an acquired target. The gun can now reach **240 units** and only
 fires when the target is visible, in range and aligned.
 
-When idle, the gun **slowly sweeps left and right** rather than pointing in
-a fixed direction. Roughly every 15–28 seconds the drone changes its watch
+When idle, the gun **slowly sweeps left and right** by up to
+**0.85 radians (about 49°) either side of its watch direction**, rather
+than pointing in a fixed direction. When searching after contact, its
+scan widens to **1.55 radians (about 89°) either side**. Roughly every 15–28 seconds the drone changes its watch
 direction by 180 degrees, with a visible turn rather than a snap. It stays
 in place when it has a firing solution.
 
@@ -96,6 +98,18 @@ velocity, including immediately after ricochets. Bullets can travel up to
 1,150 world units, bounce up to four times, and live for at most 3.2 seconds.
 When they reach a limit, they stop and disintegrate into short-lived,
 fading fragments for 0.34 seconds rather than suddenly disappearing.
+
+## Drone spacing and collision avoidance
+
+**Every drone maintains personal space from every other drone**, including
+Local Drones, the long-range missile variant and Repair Bots. They turn
+away from traffic when pursuing or fleeing and aim for a **12-unit gap
+between their collision outlines**. All drones have a physical collision
+barrier, even when they are chasing the same player or Repair Bots are
+travelling toward a healing patient. They cannot intentionally move through
+one another. Forced overlaps from blasts, asteroid shoves or collisions
+are separated by the game simulation without dealing friendly collision
+damage. Spawning also respects wider clearance between drones.
 
 ## Long-range Local Drone and homing missiles
 
@@ -279,7 +293,14 @@ Manual playtest:
   you until its gun sweeps past or you get inside the 90-unit proximity radius.
 - Approach along the gun barrel from farther away: the 400-unit, 50-degree
   forward cone should detect you, but its weapon only fires within 240 units.
+- Watch the slightly wider (60°) forward view and the widened idle and
+  searching turret sweeps, while keeping rear blind spots beyond 90 units.
 - Watch the idle gun sweep gradually and occasionally turn to check its rear.
+- Lead two Local Drones toward the same position: they should steer around
+  each other and maintain a small gap instead of stacking. Repeat with a
+  Repair Bot approaching an injured unit or retreating toward an ally.
+- Knock drones together with rocket explosions and ensure they separate
+  without inflicting collision damage on one another.
 - Shoot an ally in front of another Local Drone: the witness should show an
   amber alert ring and investigate that impact, even if it never saw you.
   A witness with its back turned, outside range or behind cover should not

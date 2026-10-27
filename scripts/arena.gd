@@ -58,7 +58,8 @@ func avoid_drones(actor: Node2D, desired: Vector2) -> Vector2:
 		var tangent: Vector2 = Vector2(-heading.y, heading.x)
 		var side := -1.0 if lateral > 0.0 else 1.0
 		if absf(lateral) < 0.1:
-			side = -1.0 if actor.get_instance_id() < other.get_instance_id() else 1.0
+			# Mirrored headings naturally select opposite world directions.
+			side = 1.0
 		steering = tangent * side
 		if distance < clearance and distance > 0.01:
 			steering = (steering * 0.45 - toward.normalized()).normalized()
@@ -142,7 +143,7 @@ func advance_asteroids(delta: float, bodies: Array) -> void:
 			for body in bodies:
 				if not is_instance_valid(body) or not body.visible:
 					continue
-				var body_radius: float = 11.0 if body == bodies[0] else 14.0
+				var body_radius: float = body.COLLISION_RADIUS
 				var reach: float = rock.radius + body_radius
 				if body.position.distance_squared_to(next) >= reach * reach:
 					continue
