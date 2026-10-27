@@ -134,7 +134,7 @@ func run() -> void:
 	game.ship.position = Vector2(220, 425)
 	game.ship.velocity = Vector2.ZERO
 
-	# Rockets inherit ALL launch momentum; Pulse Laser does not.
+	# Both primary and secondary projectile launches ignore ship inertia.
 	check(game.ship.secondary.NAME == "Unguided Rockets", "Secondary is unguided rockets")
 	check(game.ship.secondary.MAX_AMMO == 6 and game.ship.secondary.ammo == 6, "Limited six-rocket supply")
 	check(game.ship.secondary.SHOT_SPEED < game.ship.weapon.SHOT_SPEED, "Rockets travel slower than Pulse Laser relative to ship")
@@ -146,8 +146,9 @@ func run() -> void:
 	check(game.rockets.size() == 1 and game.ship.secondary.ammo == 5, "Rockets launch and consume one round")
 	if game.rockets.size() > 0:
 		var rocket = game.rockets[0]
-		check(rocket.is_rocket and rocket.velocity.is_equal_approx(Vector2(470, -60)), "Rocket inherits horizontal and vertical launch inertia")
-		check(rocket.visual_heading.is_equal_approx(rocket.velocity.normalized()), "Rocket visual faces actual momentum-adjusted heading")
+		check(rocket.is_rocket and rocket.velocity.is_equal_approx(Vector2(350, 0)), "Rocket launches strictly along barrel, with zero inherited horizontal or vertical motion")
+		check(rocket.visual_heading.is_equal_approx(Vector2.RIGHT), "Rocket artwork follows aim-only launch heading")
+		check(is_equal_approx(rocket.velocity.length(), game.ship.secondary.SHOT_SPEED), "Rocket always launches at its own fixed speed despite player drift")
 		check(rocket.max_range < game.Projectile.MAX_RANGE and rocket.damage == 2.0, "Rocket medium range and damage")
 	check(game.ship.heat > before_heat, "Rocket launch adds heat")
 	game.fire_player_rocket()
@@ -372,7 +373,25 @@ func run() -> void:
 	check(turn_missile.is_homing and turn_missile.hostile and turn_missile.velocity.y < 0.0, "Enemy missile steers toward player instead of flying straight")
 	check(turn_missile.velocity.x > 0.0 and is_equal_approx(turn_missile.velocity.length(), turn_missile.SPEED), "Homing turn is gradual at fixed missile speed")
 	check(turn_missile.blast_radius < game.ship.secondary.BLAST_RADIUS and turn_missile.damage == 1.0, "Enemy missile has smaller blast and damage than player rocket")
+	check(is_equal_approx(turn_missile.max_range, 780.0), "Enemy homing missile flight range reduced to 780 units")
 	turn_missile.free()
+
+	# Enemy launch speed is also independent of firing drone momentum.
+	var launcher = game.LongRangeDrone.new()
+	launcher.position = Vector2(250, 230)
+	launcher.velocity = Vector2(150, -90)
+	launcher.turret_angle = 0.0
+	game.add_child(launcher)
+	game.launch_enemy_homing_missile(launcher)
+	check(game.homing_missiles.size() == 1, "Long-range drone launches guided missile")
+	if game.homing_missiles.size() > 0:
+		var guided = game.homing_missiles[0]
+		check(guided.velocity.is_equal_approx(Vector2(guided.SPEED, 0.0)), "Guided missile ignores drone lateral and forward velocity")
+		check(is_equal_approx(guided.max_range, 780.0), "Spawned guided missiles use reduced range")
+	for guided in game.homing_missiles:
+		guided.free()
+	game.homing_missiles.clear()
+	launcher.free()
 
 	game.ship.position = Vector2(180, 600)
 	game.ship.velocity = Vector2.ZERO
@@ -633,6 +652,74 @@ func run() -> void:
 	new_patient.free()
 
 
+
+	# Incoming gunfire triggers Repair Bot retreat toward an allied combat
+	# drone, not toward the player; its patient assignment is retained.
+	var fleeing_bot = game.RepairBot.new()
+	fleeing_bot.position = Vector2(300, 240)
+	var shelter = game.Enemy.new()
+	shelter.position = Vector2(445, 240)
+	shelter.health = 1.0
+	game.add_child(fleeing_bot)
+	game.add_child(shelter)
+	var shelter_allies: Array[Node2D] = [fleeing_bot, shelter]
+	fleeing_bot.step_support(0.1, shelter_allies, game.arena)
+	check(fleeing_bot.assigned_patient == shelter, "Repair Bot first selects an injured patient")
+	var health_before_flight: float = shelter.health
+	check(fleeing_bot.observe_incoming_shot(Vector2(230, 262), Vector2(400, 0), shelter_allies, game.arena), "Near incoming shot triggers evasive response before impact")
+	check(fleeing_bot.evade_ally == shelter and fleeing_bot.evade_remaining > 0.0, "Repair Bot chooses fellow drone as retreat destination")
+	fleeing_bot.step_support(0.2, shelter_allies, game.arena)
+	check(fleeing_bot.velocity.x > 0.0 and fleeing_bot.velocity.length() <= fleeing_bot.EVADE_SPEED + 0.01, "Repair Bot flees toward the allied drone")
+	check(fleeing_bot.tether_target == null and shelter.health == health_before_flight, "Repair is briefly suspended while evading")
+	check(fleeing_bot.assigned_patient == shelter, "Bot retains its original patient while fleeing")
+	fleeing_bot.evade_remaining = 0.0
+	fleeing_bot.step_support(0.1, shelter_allies, game.arena)
+	check(fleeing_bot.tether_target == shelter, "Healing resumes after temporary retreat")
+
+	# A real near-miss from a Pulse Laser triggers the same response.
+	fleeing_bot.evade_remaining = 0.0
+	fleeing_bot.position = Vector2(300, 240)
+	fleeing_bot.velocity = Vector2.ZERO
+	game.enemies.append(fleeing_bot)
+	game.enemies.append(shelter)
+	game.spawn_shot(Vector2(210, 265), Vector2(450, 0), false)
+	game.step_shots(0.10)
+	check(fleeing_bot.evade_remaining > 0.0 and fleeing_bot.health == fleeing_bot.max_health, "Actual near-miss launches repair escape without damage")
+	for loose in game.shots:
+		loose.free()
+	game.shots.clear()
+	game.enemies.clear()
+	fleeing_bot.free()
+	shelter.free()
+
+	# Support-only survivors self-destruct immediately and allow the usual
+	# wave-clear sequence. No free score or hostile explosion damage.
+	var lone_bot = game.RepairBot.new()
+	lone_bot.position = Vector2(350, 250)
+	var second_bot = game.RepairBot.new()
+	second_bot.position = Vector2(425, 250)
+	var defending_drone = game.Enemy.new()
+	defending_drone.position = Vector2(500, 250)
+	game.add_child(lone_bot)
+	game.add_child(second_bot)
+	game.add_child(defending_drone)
+	game.enemies.append(lone_bot)
+	game.enemies.append(second_bot)
+	game.enemies.append(defending_drone)
+	var score_before_self_destruct: int = game.score
+	game.self_destruct_orphaned_repair_bots()
+	check(game.enemies.size() == 3, "Repair Bots do not self-destruct while combat ally survives")
+	game.enemies.erase(defending_drone)
+	defending_drone.free()
+	var effects_before_self_destruct: int = game.effects.size()
+	game.self_destruct_orphaned_repair_bots()
+	check(game.enemies.is_empty(), "All remaining Repair Bots self-destruct when no combat units remain")
+	check(game.effects.size() >= effects_before_self_destruct + 4, "Self-destructing bots leave green debris and blast effects")
+	check(game.score == score_before_self_destruct, "Support self-destruct awards no unearned kill score")
+	game._physics_process(0.016)
+	check(game.waiting_for_wave and is_equal_approx(game.wave_delay, 5.0), "Support self-destruct triggers normal five-second wave-clear countdown")
+	game.reset()
+
 	# An actual shield hit alerts observers able to SEE the impact, never
 	# revealing the unseen attacker's position.
 	for leftover in game.shots:
@@ -807,7 +894,22 @@ func run() -> void:
 	game._physics_process(1.0)
 	check(game.paused and is_equal_approx(game.wave_delay, 5.0), "Controller pause freezes countdown")
 	check(game.pause_menu_layer.visible and game.pause_reset_button.text == "RESET RUN", "Pause displays Reset Run button")
-	check(game.pause_resume_button.text == "RESUME", "Pause menu provides Resume action")
+	check(game.pause_resume_button.text == "RESUME" and game.pause_resume_button.has_focus(), "Pause menu gives gamepad focus to Resume")
+	var accepts_pad_a := false
+	for mapping in InputMap.action_get_events("ui_accept"):
+		if mapping is InputEventJoypadButton and mapping.button_index == JOY_BUTTON_A:
+			accepts_pad_a = true
+	check(accepts_pad_a, "Joypad A activates focused menu option")
+	var dpad_navigation := false
+	for mapping in InputMap.action_get_events("ui_down"):
+		if mapping is InputEventJoypadButton and mapping.button_index == JOY_BUTTON_DPAD_DOWN:
+			dpad_navigation = true
+	check(dpad_navigation, "D-pad down navigates menu options")
+	var stick_navigation := false
+	for mapping in InputMap.action_get_events("ui_down"):
+		if mapping is InputEventJoypadMotion and mapping.axis == JOY_AXIS_LEFT_Y and mapping.axis_value > 0.0:
+			stick_navigation = true
+	check(stick_navigation, "Left stick down navigates menu options")
 	game._unhandled_input(pause_button)
 	check(not game.paused and not game.pause_menu_layer.visible, "Controller resumes and hides menu")
 	# Old Enter/Y restart hotkeys must not bypass the menu.
