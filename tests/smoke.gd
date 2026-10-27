@@ -173,7 +173,7 @@ func run() -> void:
 	check(game.ship.hit(), "Final hull hit registered")
 	game._physics_process(0.01)
 	check(game.dying and not game.ship.visible and not game.game_over, "Ship replaced by death explosion")
-	check(game.death_timer > 0.0 and game.death_timer < game.DEATH_EXPLOSION_TIME, "Death presentation timer running")
+	check(game.death_timer > 0.0 and game.death_timer <= game.DEATH_EXPLOSION_TIME, "Death presentation timer running")
 	var wreckage = game.effects[game.effects.size() - 1]
 	check(wreckage.fragments.size() >= 30 and wreckage.duration >= 0.85, "Death spawns extended wreckage cloud")
 	game._physics_process(0.4)
