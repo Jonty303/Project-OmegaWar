@@ -65,6 +65,13 @@ func run() -> void:
 	game.step_shots(0.4)
 	check(not game.shots.has(expired), "Shot removed after disintegration")
 
+	# Start a real wave, then isolate the final drone for collision tests.
+	# This also exercises the actual last-enemy wave-clear transition.
+	game.start_wave()
+	for drone in game.enemies:
+		drone.free()
+	game.enemies.clear()
+
 	# Ramming applies an impulse and draws a particle cloud.
 	var target = game.Enemy.new()
 	target.position = Vector2(320, 210)
