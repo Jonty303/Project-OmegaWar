@@ -351,7 +351,7 @@ func step_rockets(delta: float) -> void:
 		var rocket = rockets[index]
 		rocket.lifetime -= delta
 		rocket.trail_time += delta
-		var detonate := rocket.lifetime <= 0.0 or rocket.bounces_left <= 0 or rocket.distance_travelled >= rocket.max_range
+		var detonate: bool = rocket.lifetime <= 0.0 or rocket.bounces_left <= 0 or rocket.distance_travelled >= rocket.max_range
 		if not detonate:
 			# Sample in short increments so fast missiles cannot tunnel through
 			# a ship, a dense rock, or a narrow section of arena wall.
