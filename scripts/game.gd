@@ -17,6 +17,9 @@ var wave_delay := 1.0
 var waiting_for_wave := true
 var paused := false
 var game_over := false
+var dying := false
+var death_timer := 0.0
+const DEATH_EXPLOSION_TIME := 0.90
 var hud := Label.new()
 var banner := Label.new()
 
@@ -97,6 +100,8 @@ func reset() -> void:
 	waiting_for_wave = true
 	paused = false
 	game_over = false
+	dying = false
+	death_timer = 0.0
 	update_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -115,18 +120,24 @@ func _physics_process(delta: float) -> void:
 		return
 	arena.advance_flashes(delta)
 	step_effects(delta)
+	if dying:
+		death_timer = maxf(0.0, death_timer - delta)
+		if death_timer <= 0.0:
+			dying = false
+			game_over = true
+		update_hud()
+		return
 	ship.step(delta, arena)
 	if Input.is_action_pressed("fire"):
 		for shot in ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation), ship.velocity):
 			spawn_shot(shot.position, shot.velocity, false)
 	for enemy in enemies:
 		enemy.step(delta, ship.position, arena)
-		if enemy.fire_timer <= 0.0:
-			enemy.fire_timer = randf_range(2.2, 3.2)
-			# A short velocity lead rewards skillful changes of direction.
-			var predicted: Vector2 = ship.position + ship.velocity * 0.25
-			var aim: Vector2 = enemy.position.direction_to(predicted)
-			spawn_shot(enemy.position + aim * 19.0, aim * 225.0, true)
+		# No shooting outside sensor/weapon range, through the core, or before
+		# the visible gun hand has completed its turn toward the player.
+		if enemy.ready_to_fire(ship.position, arena):
+			spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * 225.0, true)
+			enemy.fired()
 	resolve_collisions()
 	step_shots(delta)
 	if enemies.is_empty():
@@ -138,12 +149,23 @@ func _physics_process(delta: float) -> void:
 			if wave_delay <= 0.0:
 				start_wave()
 	if ship.hull <= 0:
-		game_over = true
+		begin_player_death()
 	update_hud()
 
+func begin_player_death() -> void:
+	if dying or game_over:
+		return
+	dying = true
+	death_timer = DEATH_EXPLOSION_TIME
+	ship.visible = false
+	ship.velocity = Vector2.ZERO
+	# Larger, longer-lived burst than ordinary hits: the ship disintegrates
+	# into moving wreckage before the game-over banner appears.
+	spawn_debris(ship.position, Color(0.3, 1.0, 0.95), 2.1, 32, DEATH_EXPLOSION_TIME)
+
 func resolve_collisions() -> void:
-	# Impulse-based ship/enemy impacts: separation, momentum transfer, crunch
-	# animation, and damage on substantial closing speed. No sticky overlap.
+	# Impulse-based ship/enemy impacts: separation, momentum transfer and
+	# independent debris bursts. Hull geometry never changes.
 	for i in range(enemies.size() - 1, -1, -1):
 		var enemy = enemies[i]
 		var offset: Vector2 = ship.position - enemy.position
@@ -176,6 +198,7 @@ func resolve_collisions() -> void:
 
 func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
+	spawn_debris(enemy.position, Color(1.0, 0.5, 0.25), 1.4, 16, 0.62)
 	score += 100
 	enemies.remove_at(index)
 	enemy.queue_free()
@@ -222,10 +245,10 @@ func step_shots(delta: float) -> void:
 		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
 			shot.begin_disintegrate()
 
-func spawn_debris(at: Vector2, color: Color, strength: float = 1.0) -> void:
+func spawn_debris(at: Vector2, color: Color, strength: float = 1.0, amount: int = 8, lifespan: float = ImpactParticles.DURATION) -> void:
 	var effect := ImpactParticles.new()
 	effect.position = at
-	effect.configure(color, 8, strength)
+	effect.configure(color, amount, strength, lifespan)
 	effects.append(effect)
 	add_child(effect)
 
@@ -270,17 +293,20 @@ func start_wave() -> void:
 	wave += 1
 	waiting_for_wave = false
 	wave_delay = 0.0
-	# Keep baseline encounters readable: just three to five identical drones.
+	# Local Drones spawn as sentries: they wait until they actually see us.
 	for i in range(randi_range(3, 5)):
 		var enemy := Enemy.new()
 		enemy.position = safe_position()
 		enemy.fire_timer = randf_range(1.5, 3.0)
+		enemy.turret_angle = randf_range(-PI, PI)
 		enemies.append(enemy)
 		add_child(enemy)
 
 func update_hud() -> void:
-	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HULL %d\nSIMPLE DRONES  |  MOMENTUM + RICOCHET  |  CLEAR THE ARENA" % [score, wave, maxi(ship.hull, 0)]
-	if game_over:
+	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HULL %d\nLOCAL DRONES  |  SENTRY TURRETS + MOMENTUM  |  CLEAR THE ARENA" % [score, wave, maxi(ship.hull, 0)]
+	if dying:
+		banner.text = ""
+	elif game_over:
 		banner.text = "SHIP LOST / ENTER OR Y TO RESTART"
 	elif paused:
 		banner.text = "PAUSED / P, ESC OR START TO RESUME"
