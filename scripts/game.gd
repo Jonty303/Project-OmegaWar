@@ -184,6 +184,8 @@ func step_shots(delta: float) -> void:
 			arena.move_shot(shot, delta / steps)
 			if shot.hostile:
 				if shot.position.distance_to(ship.position) < Ship.COLLISION_RADIUS + Projectile.HIT_RADIUS:
+					ship.velocity += shot.velocity.normalized() * 24.0
+					ship.crunch = maxf(ship.crunch, 0.35)
 					ship.hit()
 					shot.lifetime = 0.0
 					break
@@ -191,6 +193,7 @@ func step_shots(delta: float) -> void:
 				for j in range(enemies.size() - 1, -1, -1):
 					var enemy = enemies[j]
 					if shot.position.distance_to(enemy.position) < Enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
+						enemy.velocity += shot.velocity.normalized() * 30.0
 						enemy.health -= 1
 						enemy.crunch = maxf(enemy.crunch, 0.65)
 						enemy.queue_redraw()
