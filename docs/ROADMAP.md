@@ -7,11 +7,15 @@ This **classic-baseline** branch is focused on game feel:
 - 145-unit/s² acceleration, 320-unit/s maximum ship speed and momentum
   without passive decay; 98.5% wall/core bounce restitution (but independent
   asteroid/ship impact physics);
-- two to four Local Drones: 90-unit omnidirectional vision and a 400-unit,
+- two to three Local Drones: 90-unit omnidirectional vision and a 400-unit,
   50-degree barrel-facing cone, 240-unit weapon reach, slow idle turret sweeps,
   rare about-faces, 7.5-radian/s tracking, last-sighting and incoming-shot
   bearing investigation, and witnessing ally hits only within their real
   sensors, subject to cover occlusion;
+- one indigo long-range Local Drone per wave, maintaining 275–365 units
+  from the player and launching 375-unit/s guided missiles from 275–395
+  units when in sight. Missiles have a 48-unit blast and detonate against
+  any physical barrier, enemy or player without bouncing;
 - one unarmed Repair Bot per wave with global awareness of damaged allies,
   a locked patient until fully healed or destroyed, 105-unit/s movement
   and a 170-unit electrical healing tether;
@@ -30,7 +34,8 @@ This **classic-baseline** branch is focused on game feel:
   95-unit blast radius damaging both teams with physical knockback;
 - projectiles that ricochet off walls and the core, but disintegrate
   against asteroids and apply a small kinetic push;
-- keyboard and controller inputs, pause, score and five-second wave restarts.
+- keyboard and controller inputs, a Resume / Reset Run pause menu instead
+  of a global restart key, score and five-second wave restarts.
 
 There are intentionally **no power-ups, boost equipment, gravity-well enemies
 or changing arenas** in this baseline beyond the new basic rocket secondary.
@@ -52,11 +57,14 @@ obstacles.
 1. The ship feels controllable and inertia is consistent at different frame
    rates, with a 320-unit/s max and no friction below it; Pulse Laser shots
    outpace the ship and never inherit the ship's velocity.
-2. Local Drones can be ambushed from behind, only see far in their turret cone,
+2. Ordinary Local Drones can be ambushed from behind, only see far in their
+   turret cone; long-range variants attempt to maintain a standoff distance,
    and investigate the last sighting, a witnessed allied impact, or the
    reverse bearing of an incoming shot. Alerts never expose the unseen
    attacker's exact coordinates.
 3. Bullet ricochets behave predictably against every arena surface.
 4. Ramming enemies transfers momentum, emits debris, and can cause damage.
    Asteroid impacts never damage ships and persistent thrust slowly moves them.
-5. Controller input, pause and wave timing are reliable.
+5. Controller input, menu-only restart, pause and wave timing are reliable;
+   missile contact with walls, core, asteroids and all ships detonates
+   instead of bouncing.

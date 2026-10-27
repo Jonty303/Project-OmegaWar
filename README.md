@@ -10,7 +10,8 @@ Personal shields are now a separate, finite health pool (not a pickup).
 Open `project.godot` in Godot 4.5.2 and press **F5**. The ship starts with
 three hull points, two shield points and two seconds of spawn protection.
 The first wave appears after one second; subsequent waves appear **five seconds
-after the last enemy dies**, with **two to four Local Drones and one Repair Bot**.
+after the last enemy dies**, with **two to three ordinary Local Drones,
+one long-range missile drone and one Repair Bot**.
 
 | Keyboard | Joypad | Action |
 | --- | --- | --- |
@@ -19,8 +20,8 @@ after the last enemy dies**, with **two to four Local Drones and one Repair Bot*
 | S / Down / Shift | Left stick down, D-pad down or B (Special) | Retro burners / brake |
 | Space | X, RB or RT | Pulse Laser |
 | Q | LB | Launch unguided rocket |
-| P / Escape | Start | Pause / resume |
-| Enter | Y | Restart |
+| P / Escape | Start | Open / close pause menu |
+| Pause menu: Reset Run | Pause menu: Reset Run | Restart from the menu only |
 
 The ship accelerates gently (145 units/s²) and **never slows down by itself**:
 velocity is retained until you thrust in another direction, apply the brakes
@@ -93,6 +94,43 @@ velocity, including immediately after ricochets. Bullets can travel up to
 1,150 world units, bounce up to four times, and live for at most 3.2 seconds.
 When they reach a limit, they stop and disintegrate into short-lived,
 fading fragments for 0.34 seconds rather than suddenly disappearing.
+
+## Long-range Local Drone and homing missiles
+
+One **long-range Local Drone** variant joins each wave. Its indigo, finned
+silhouette and longer amber barrel distinguish it from ordinary sentries.
+It retains the Local Drone's detection cones, last-sighting investigation
+and incoming-fire reactions, but uses a **standoff tactic** instead of
+approaching close. Its **preferred band is 275–365 units** from the player:
+it backs away when too close, holds position inside the band and approaches
+when the player is too far away, steering around the core and asteroids.
+It has **3 hull HP and 1 shield point**.
+
+Its launcher fires a small homing missile only when the target is visible,
+the turret is aligned and the player is **275–395 units away**. Fire
+interval averages **3.15 seconds**. The missile flies at **375 units/s**,
+turns at up to **2.85 radians/s**, and has a maximum **900-unit flight
+distance** or **3-second life**. It travels toward the player's current
+position without phasing through barriers.
+
+**Homing missiles explode on their first physical collision.** That
+includes the player, either enemy variant, Repair Bots, asteroids, outer
+arena walls and the central core. Unlike the player's unguided rockets,
+enemy homing missiles **never bounce**. Their smaller blast has a
+**48-unit radius**, up to **1 shield-first damage**, and up to **100
+units/s outward knockback**; it may damage nearby allied enemies as well.
+The normal ship damage cooldown applies to the player.
+
+## Pause menu and reset
+
+**Reset Run is no longer bound to Enter or controller Y during play.**
+Press **P, Escape or controller Start** to open a proper pause overlay
+with clickable, keyboard- and gamepad-navigable **Resume** and **Reset Run**
+buttons. Movement, projectiles, missiles, waves and effects freeze while
+the menu is open. Resume hides it and continues the existing run.
+After a ship's death explosion, the menu opens automatically as
+**Ship Lost**, with Resume disabled and Reset Run available. This makes
+restart deliberate rather than an accidental key press.
 
 ## Repair Bots, shield pools and status displays
 
@@ -189,7 +227,9 @@ godot --headless --path . --quit-after 600
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
 Local Drone dual-zone vision, incoming-shot bearing investigation, quicker
 turret tracking, witnessed allied-hit alerts, slow sweeping sentry turret
-and last-sighting investigation, stronger wall rebounds, shield-bar ordering, worldwide Repair
+and last-sighting investigation, long-range standoff drones and contact
+exploding homing missiles, menu-only reset with pause freeze,
+stronger wall rebounds, shield-bar ordering, worldwide Repair
 Bot awareness, locked healing assignments and faster response,
 rock/core occlusion and heavy asteroid impulses,
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
@@ -246,7 +286,13 @@ Manual playtest:
 - Ram a drone at speed: bodies bounce, a tiny debris cloud appears, and
   neither hull changes shape or blinks.
 - Let the ship lose its last hull point: observe a broad debris explosion
-  before the game-over message appears; restart with Enter or controller Y.
+  before the Ship Lost menu appears. Choose Reset Run in the menu.
+- Approach an indigo long-range drone: it should retreat to preserve its
+  preferred firing distance, then launch a small missile if it can see you.
+  Dodge behind an asteroid, core or arena boundary: a homing missile that
+  strikes any barrier must detonate on contact, never ricochet.
+- Press P/Escape/Start during play and use Resume or Reset Run in the pause
+  menu. Enter and Y outside the menu must not restart the game.
 - Shoot a shielded Repair Bot: its blue shield pool must reach zero before
   the green health pool is damaged. The shield/health mini-bars should appear.
 - Injure a Local Drone anywhere in the arena: a Repair Bot should respond
@@ -256,8 +302,8 @@ Manual playtest:
 - Check the bottom HUD updates with speed, thrust percentage, health,
   shields and heat. Secondary ammo/cooldown should explicitly say unavailable.
 - Destroy a drone and verify its debris burst.
-- Clear a wave, pause during the countdown, then watch 2–4 Local Drones
-  and one Repair Bot return.
+- Clear a wave, pause during the countdown, then watch 2–3 Local Drones,
+  one long-range missile drone and one Repair Bot return.
 
 All visuals are procedural line art; no external sprites or plugins are needed.
 There is no audio, settings or save system yet. `docs/ROADMAP.md` retains the
