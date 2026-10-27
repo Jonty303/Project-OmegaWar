@@ -54,6 +54,13 @@ func _ready() -> void:
 	bind_pad_button("fire_secondary", [JOY_BUTTON_LEFT_SHOULDER])
 	bind_pad_button("fire", [JOY_BUTTON_X, JOY_BUTTON_RIGHT_SHOULDER])
 	bind_pad_button("pause_game", [JOY_BUTTON_START])
+	# Menu navigation: the joypad A/primary-face button activates whichever
+	# Button currently has focus. D-pad and left stick move that focus.
+	bind_pad_button("ui_accept", [JOY_BUTTON_A])
+	bind_pad_button("ui_up", [JOY_BUTTON_DPAD_UP])
+	bind_pad_button("ui_down", [JOY_BUTTON_DPAD_DOWN])
+	bind_pad_axis("ui_up", JOY_AXIS_LEFT_Y, -1.0)
+	bind_pad_axis("ui_down", JOY_AXIS_LEFT_Y, 1.0)
 	# Do not bind Y to global reset; accidental mid-run resets are disabled.
 	bind_pad_axis("turn_left", JOY_AXIS_LEFT_X, -1.0)
 	bind_pad_axis("turn_right", JOY_AXIS_LEFT_X, 1.0)
@@ -109,6 +116,11 @@ func setup_pause_menu() -> void:
 	pause_reset_button.focus_mode = Control.FOCUS_ALL
 	pause_reset_button.pressed.connect(reset_from_menu)
 	stack.add_child(pause_reset_button)
+	# Explicit wrapping links guarantee pad navigation in either direction.
+	pause_resume_button.focus_neighbor_bottom = pause_reset_button.get_path()
+	pause_resume_button.focus_neighbor_top = pause_reset_button.get_path()
+	pause_reset_button.focus_neighbor_top = pause_resume_button.get_path()
+	pause_reset_button.focus_neighbor_bottom = pause_resume_button.get_path()
 	pause_menu_layer.visible = false
 
 func set_paused(value: bool) -> void:
@@ -227,6 +239,7 @@ func _physics_process(delta: float) -> void:
 	step_shots(delta)
 	step_rockets(delta)
 	step_homing_missiles(delta)
+	self_destruct_orphaned_repair_bots()
 	# Weapon knockback and ramming can add impulses after ship.step.
 	ship.enforce_speed_limit()
 	if enemies.is_empty():
@@ -294,8 +307,39 @@ func notify_drones_of_hit(victim: Node2D, incoming_velocity: Vector2 = Vector2.Z
 		if observer.is_repair_bot:
 			continue
 		observer.alert_to_ally_hit(victim.position, arena, observer == victim)
-	if not victim.is_repair_bot and victim.health > 0.0:
+	if victim.is_repair_bot and victim.health > 0.0:
+		victim.alert_incoming_fire(incoming_velocity, enemies)
+	elif victim.health > 0.0:
 		victim.react_to_incoming_shot(incoming_velocity, arena)
+
+func self_destruct_orphaned_repair_bots() -> void:
+	# If only support units survive, no combatants remain to defend.
+	# Dispose of all remaining Repair Bots immediately with green debris.
+	# This is a visual self-destruct rather than an attack on the player.
+	if enemies.is_empty():
+		return
+	for enemy in enemies:
+		if not enemy.is_repair_bot and enemy.health > 0.0:
+			return
+	for index in range(enemies.size() - 1, -1, -1):
+		var bot = enemies[index]
+		if not bot.is_repair_bot:
+			continue
+		spawn_debris(bot.position, Color(0.24, 1.0, 0.47), 1.6, 20, 0.64)
+		var cloud := Explosion.new()
+		cloud.position = bot.position
+		cloud.configure(43.0)
+		effects.append(cloud)
+		add_child(cloud)
+		arena.apply_blast(bot.position, 190.0, 65.0)
+		enemies.remove_at(index)
+		bot.queue_free()
+	# Wave-clear countdown is handled normally after the final bot is gone.
+
+func alert_repair_bots_to_fire(shot_position: Vector2, shot_velocity: Vector2) -> void:
+	for bot in enemies:
+		if bot.is_repair_bot and bot.health > 0.0:
+			bot.observe_incoming_shot(shot_position, shot_velocity, enemies, arena)
 
 func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
@@ -321,6 +365,8 @@ func step_shots(delta: float) -> void:
 			for substep in range(steps):
 				if shot.bounces_left <= 0 or shot.distance_travelled >= shot.max_range:
 					break
+				if not shot.hostile:
+					alert_repair_bots_to_fire(shot.position, shot.velocity)
 				arena.move_shot(shot, delta / float(steps))
 				if shot.dissolving:
 					break # Hit heavy asteroid cover: no damage or ricochet.
@@ -476,6 +522,7 @@ func step_rockets(delta: float) -> void:
 			# a ship, a dense rock, or a narrow section of arena wall.
 			var substeps: int = maxi(1, int(ceil(rocket.velocity.length() * delta / 3.0)))
 			for substep in range(substeps):
+				alert_repair_bots_to_fire(rocket.position, rocket.velocity)
 				arena.move_shot(rocket, delta / float(substeps))
 				if rocket.impact_pending:
 					detonate = true
