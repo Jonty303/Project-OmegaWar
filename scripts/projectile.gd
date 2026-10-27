@@ -5,6 +5,9 @@ const MAX_RANGE := 1150.0
 const DISSOLVE_SECONDS := 0.34
 
 var velocity := Vector2.ZERO
+var hit_radius := HIT_RADIUS
+var is_rocket := false
+var impact_pending := false
 var damage := 1.0
 var max_range := MAX_RANGE
 var visual_heading := Vector2.RIGHT

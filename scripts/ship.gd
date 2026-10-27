@@ -2,11 +2,14 @@ extends Node2D
 
 const COLLISION_RADIUS := 11.0
 const THRUST_ACCELERATION := 145.0
+const RETRO_DECELERATION := 265.0
 const MAX_SPEED := 320.0
 const Weapon = preload("res://scripts/weapon.gd")
+const RocketLauncher = preload("res://scripts/secondary_rockets.gd")
 const DamageModel = preload("res://scripts/combat_health.gd")
 
 var weapon := Weapon.new()
+var secondary := RocketLauncher.new()
 var velocity := Vector2.ZERO
 var hull := 3.0
 var max_hull := 3.0
@@ -18,6 +21,7 @@ const COOLING_RATE := 12.0
 const FIRE_HEAT := Weapon.HEAT_PER_SHOT
 var invulnerable := 2.0
 var thrusting := false
+var retro_active := false
 
 func step(delta: float, arena: Node2D) -> void:
 	rotation += Input.get_axis("turn_left", "turn_right") * 3.5 * delta
@@ -26,8 +30,12 @@ func step(delta: float, arena: Node2D) -> void:
 	# Nothing reduces momentum passively. Thrust, brake and impacts are forces.
 	if thrusting:
 		velocity += Vector2.UP.rotated(rotation) * THRUST_ACCELERATION * thrust_strength * delta
-	if Input.get_action_strength("brake") > 0.02:
-		velocity *= exp(-3.0 * Input.get_action_strength("brake") * delta)
+	# Front-mounted retro thrusters arrest momentum without reversing it.
+	# The old brake inputs remain aliases; Special is the explicit control.
+	var retro_strength: float = maxf(Input.get_action_strength("special"), Input.get_action_strength("brake"))
+	retro_active = retro_strength > 0.02 and velocity.length() > 0.01
+	if retro_active:
+		velocity = velocity.move_toward(Vector2.ZERO, RETRO_DECELERATION * retro_strength * delta)
 	# Maximum ship speed is enforced without any passive damping below it.
 	# Projectile speed is deliberately higher and ignores this velocity.
 	enforce_speed_limit()
@@ -36,6 +44,7 @@ func step(delta: float, arena: Node2D) -> void:
 	invulnerable = maxf(0.0, invulnerable - delta)
 	heat = maxf(0.0, heat - COOLING_RATE * delta)
 	weapon.tick(delta)
+	secondary.tick(delta)
 	queue_redraw()
 
 func enforce_speed_limit() -> void:
@@ -44,6 +53,9 @@ func enforce_speed_limit() -> void:
 func fired_primary() -> void:
 	# Heat is tracked for the new HUD; no heat lockout until weapons are tuned.
 	heat = minf(MAX_HEAT, heat + FIRE_HEAT)
+
+func fired_secondary() -> void:
+	heat = minf(MAX_HEAT, heat + secondary.HEAT_PER_SHOT)
 
 func hit(amount: float = 1.0, shield_factor: float = 1.0, hull_factor: float = 1.0) -> bool:
 	if invulnerable > 0.0:
@@ -65,3 +77,11 @@ func _draw() -> void:
 		draw_polyline(PackedVector2Array([
 			Vector2(-5, 10), Vector2(0, 21 + randf() * 6), Vector2(5, 10)
 		]), Color(1, 0.6, 0.2), 2.0, true)
+	if retro_active:
+		# Two tiny flames at the FRONT shoulders, pointing forward to
+		# represent reverse-facing exhaust jets.
+		for side in [-1.0, 1.0]:
+			var port := Vector2(side * 7.0, -5.0)
+			var tip := port + Vector2(side * 2.0, -(7.0 + randf_range(0.0, 3.0)))
+			draw_line(port, tip, Color(1.0, 0.68, 0.26), 2.4, true)
+			draw_line(port, port.lerp(tip, 0.55), Color(1.0, 0.96, 0.67), 1.2, true)

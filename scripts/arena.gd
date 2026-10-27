@@ -234,22 +234,22 @@ func move_shot(shot: Projectile, delta: float) -> void:
 			return
 		var dt := delta / steps
 		var proposed: Vector2 = shot.position + Vector2(shot.velocity.x * dt, 0)
-		if asteroid_at(proposed, Projectile.HIT_RADIUS) != null:
+		if asteroid_at(proposed, shot.hit_radius) != null:
 			strike_asteroid(shot, proposed)
 			return
-		if blocked_static(proposed, Projectile.HIT_RADIUS):
-			register_bounce(proposed, Projectile.HIT_RADIUS, true, shot.velocity.x, absf(shot.velocity.x), false)
+		if blocked_static(proposed, shot.hit_radius):
+			register_bounce(proposed, shot.hit_radius, true, shot.velocity.x, absf(shot.velocity.x), false)
 			shot.velocity.x = -shot.velocity.x
 			shot.sync_visual_heading()
 			shot.bounces_left -= 1
 		else:
 			shot.position = proposed
 		proposed = shot.position + Vector2(0, shot.velocity.y * dt)
-		if asteroid_at(proposed, Projectile.HIT_RADIUS) != null:
+		if asteroid_at(proposed, shot.hit_radius) != null:
 			strike_asteroid(shot, proposed)
 			return
-		if blocked_static(proposed, Projectile.HIT_RADIUS):
-			register_bounce(proposed, Projectile.HIT_RADIUS, false, shot.velocity.y, absf(shot.velocity.y), false)
+		if blocked_static(proposed, shot.hit_radius):
+			register_bounce(proposed, shot.hit_radius, false, shot.velocity.y, absf(shot.velocity.y), false)
 			shot.velocity.y = -shot.velocity.y
 			shot.sync_visual_heading()
 			shot.bounces_left -= 1
@@ -258,10 +258,15 @@ func move_shot(shot: Projectile, delta: float) -> void:
 		shot.distance_travelled += starting_position.distance_to(shot.position)
 
 func strike_asteroid(shot: Projectile, next: Vector2) -> void:
-	var rock = asteroid_at(next, Projectile.HIT_RADIUS)
+	var rock = asteroid_at(next, shot.hit_radius)
 	if rock == null:
 		return
-	# Transfer only a small fraction of projectile momentum to heavy cover.
+	if shot.is_rocket:
+		# Rocket physics is handled centrally by the game so its blast hits
+		# everything once, including the rock, enemies and player.
+		shot.impact_pending = true
+		return
+	# Pulse Laser: harmless to the rock apart from a small kinetic nudge.
 	rock.apply_impulse(shot.velocity.normalized() * 85.0)
 	shot.begin_disintegrate()
 	asteroid_struck.emit(shot.position, shot.velocity.length())
