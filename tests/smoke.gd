@@ -65,6 +65,64 @@ func run() -> void:
 	game.step_shots(0.4)
 	check(not game.shots.has(expired), "Shot removed after disintegration")
 
+	# Local Drone: idle while unseen, detect in 360 degrees, respect range.
+	var sentry = game.Enemy.new()
+	sentry.position = Vector2(250, 230)
+	game.add_child(sentry)
+	sentry.fire_timer = 0.0
+	sentry.step(0.1, Vector2(1020, 230), game.arena)
+	check(not sentry.spotted_once and sentry.velocity.is_zero_approx(), "Unalerted drone holds position")
+	var seen_at := Vector2(350, 230)
+	sentry.step(0.1, seen_at, game.arena)
+	check(sentry.spotted_once and sentry.can_see_player, "Drone acquires 360 degree sight")
+	check(sentry.velocity.is_zero_approx(), "Sentry does not pursue a target already in firing range")
+	check(sentry.ready_to_fire(seen_at, game.arena), "Turret aligned with seen in-range target")
+	check(not sentry.ready_to_fire(Vector2(610, 230), game.arena), "Weapon range is shorter than sight")
+
+	# Turret rotation is independent of hull motion; only fires once aligned.
+	sentry.turret_angle = PI
+	sentry.step(0.02, seen_at, game.arena)
+	check(not sentry.ready_to_fire(seen_at, game.arena), "No instant firing through turret turn")
+	sentry.step(0.60, seen_at, game.arena)
+	check(sentry.ready_to_fire(seen_at, game.arena), "Turret turns toward target at finite speed")
+
+	# Out of sight, pursue the LAST sighting, never the unseen player position.
+	sentry.step(0.1, Vector2(1020, 230), game.arena)
+	check(not sentry.can_see_player and sentry.velocity.x > 0.0, "Search moves toward last sighting")
+	check(sentry.last_seen_position.is_equal_approx(seen_at), "Lost drone remembers old position")
+	check(not sentry.ready_to_fire(Vector2(1020, 230), game.arena), "No shooting at unseen targets")
+
+	# Cross-core visibility check, despite the player being within sensor radius.
+	var hidden = game.Enemy.new()
+	hidden.position = Vector2(430, 425)
+	game.add_child(hidden)
+	hidden.step(0.1, Vector2(780, 425), game.arena)
+	check(not hidden.spotted_once and not hidden.can_see_player, "Core blocks drone vision")
+	check(hidden.velocity.is_zero_approx(), "Unalerted drone ignores unseen players")
+	hidden.free()
+	sentry.free()
+
+	# Integrate sentry fire through the main coordinator.
+	var shooter = game.Enemy.new()
+	shooter.position = Vector2(250, 230)
+	shooter.turret_angle = 0.0
+	shooter.fire_timer = 0.0
+	game.add_child(shooter)
+	game.enemies.append(shooter)
+	game.ship.position = Vector2(350, 230)
+	game.ship.velocity = Vector2.ZERO
+	game._physics_process(0.016)
+	var hostile_shots := 0
+	for shot in game.shots:
+		if shot.hostile:
+			hostile_shots += 1
+	check(hostile_shots == 1, "Local Drone shoots from its turret only when aligned")
+	game.enemies.clear()
+	shooter.free()
+	for shot in game.shots:
+		shot.free()
+	game.shots.clear()
+
 	# Start a real wave, then isolate the final drone for collision tests.
 	# This also exercises the actual last-enemy wave-clear transition.
 	game.start_wave()
@@ -109,7 +167,22 @@ func run() -> void:
 	game._unhandled_input(pause_button)
 	check(not game.paused, "Controller resumes")
 
+	# Final player hit creates a large, visible death cloud BEFORE game over.
+	game.ship.hull = 1
+	game.ship.invulnerable = 0.0
+	check(game.ship.hit(), "Final hull hit registered")
+	game._physics_process(0.01)
+	check(game.dying and not game.ship.visible and not game.game_over, "Ship replaced by death explosion")
+	check(game.death_timer > 0.0 and game.death_timer < game.DEATH_EXPLOSION_TIME, "Death presentation timer running")
+	var wreckage = game.effects[game.effects.size() - 1]
+	check(wreckage.fragments.size() >= 30 and wreckage.duration >= 0.85, "Death spawns extended wreckage cloud")
+	game._physics_process(0.4)
+	check(game.dying and not game.game_over and wreckage.remaining > 0.0, "Death debris remains visible before game over")
+	game._physics_process(0.55)
+	check(game.game_over and not game.dying, "Game over waits until debris animation")
+
 	game.reset()
+	check(game.ship.visible and not game.game_over and not game.dying, "Restart restores player ship")
 	check(game.arena.segments.size() == 28 and game.effects.is_empty(), "Restart clears particle effects")
 	game.free()
 	await process_frame

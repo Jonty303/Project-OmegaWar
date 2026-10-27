@@ -245,7 +245,7 @@ func step_shots(delta: float) -> void:
 		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
 			shot.begin_disintegrate()
 
-func spawn_debris(at: Vector2, color: Color, strength: float = 1.0, amount: int = 8, lifespan: float = ImpactParticles.DURATION) -> void:
+func spawn_debris(at: Vector2, color: Color, strength: float = 1.0, amount: int = 8, lifespan: float = 0.42) -> void:
 	var effect := ImpactParticles.new()
 	effect.position = at
 	effect.configure(color, amount, strength, lifespan)
