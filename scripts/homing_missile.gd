@@ -7,7 +7,7 @@ const TURN_RATE := 2.85
 const BLAST_RANGE := 48.0
 const DAMAGE := 1.0
 const BLAST_KNOCKBACK := 100.0
-const FLIGHT_RANGE := 900.0
+const FLIGHT_RANGE := 780.0
 const FLIGHT_LIFETIME := 3.0
 const RADIUS := 4.0
 

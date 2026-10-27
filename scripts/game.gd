@@ -407,7 +407,7 @@ func fire_player_rocket() -> void:
 	# Do not consume scarce ammunition when the muzzle is already obstructed.
 	if arena.blocked(launch_point, Rocket.ROCKET_RADIUS):
 		return
-	var launch: Dictionary = ship.secondary.fire(ship.position, direction, ship.velocity)
+	var launch: Dictionary = ship.secondary.fire(ship.position, direction)
 	if launch.is_empty():
 		return
 	var missile := Rocket.new()
