@@ -5,23 +5,27 @@
 This **classic-baseline** branch is focused on game feel:
 - one arena and central obstruction, plus two heavy movable asteroids as cover;
 - slow acceleration and momentum without passive decay;
-- three to five Local Drones: limited-range 360-degree vision and turret fire,
+- two to four Local Drones: limited-range 360-degree vision and turret fire,
   stationary sentry behaviour, 250-unit detection / 200-unit weapon range,
   and last-seen-position pursuit around obstacles;
+- one unarmed Repair Bot per wave with slow allied healing over an electric tether;
+- separate hull HP and shield HP, shield-first damage, on-damage mini-bars,
+  and a compact bottom HUD for speed, thrust, health, shields, heat and
+  placeholders for secondary ammunition and ability cooldown;
 - physical ship/enemy impacts with separation, impulses and temporary debris;
 - ship death explosions with a brief wreckage phase before game over;
 - projectiles that ricochet off walls and the core, but disintegrate
   against asteroids and apply a small kinetic push;
 - keyboard and controller inputs, pause, score and five-second wave restarts.
 
-There are intentionally **no power-ups, shields, boosts, gravity-well enemies,
+There are intentionally **no power-ups, boost equipment, gravity-well enemies,
 special weapons or changing arenas** in this baseline.
 
 ## Once movement and combat feel right
 
 Later branches can add weapon variants: rockets, lasers, homing missiles, timed
 and sticky bombs, proximity mines and cluster projectiles; then defensive and
-movement equipment such as shields and afterburners. Build shared damage,
+movement equipment such as shield recharge and afterburners. Build shared damage,
 physics and projectile interfaces before adding multiple weapon types.
 
 Arena resources can later introduce broken rings, narrow channels, islands,

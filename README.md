@@ -1,15 +1,16 @@
 # OmegaWar — classic baseline
 
 A **Godot 4.5.2** vector-style arcade shooter inspired by the momentum combat
-of Omega Race. This branch intentionally removes all power-ups, boosts, shields,
-rapid-fire modifiers and gravity wells to focus on movement and combat feel.
+of Omega Race. This branch omits power-ups, boosts, rapid-fire modifiers and gravity wells,
+and concentrates on small-scale combat, support units and momentum physics.
+Personal shields are now a separate, finite health pool (not a pickup).
 
 ## Getting started
 
 Open `project.godot` in Godot 4.5.2 and press **F5**. The ship starts with
-three hull points and two seconds of spawn protection. A first wave appears
-after one second; subsequent waves appear **five seconds after the last enemy
-dies**, with three to five **Local Drones** chosen each time.
+three hull points, two shield points and two seconds of spawn protection.
+The first wave appears after one second; subsequent waves appear **five seconds
+after the last enemy dies**, with **two to four Local Drones and one Repair Bot**.
 
 | Keyboard | Joypad | Action |
 | --- | --- | --- |
@@ -62,6 +63,34 @@ velocity, including immediately after ricochets. Bullets can travel up to
 When they reach a limit, they stop and disintegrate into short-lived,
 fading fragments for 0.34 seconds rather than suddenly disappearing.
 
+## Repair Bots, shield pools and status displays
+
+**Repair Bots** are the second enemy type. They have **no weapons**, six hull
+points, and a two-point shield. They float at about 42 units/second when
+responding to an injured allied unit, or hold position when one is close enough
+to heal. A jagged **green electrical tether** joins a Repair Bot to the
+damaged ally, only within 148 units and with clear line of sight. The tether
+restores **0.9 hull HP and 0.75 shield points per second**, up to the ally's
+normal maximum. The bot can repair other enemies (including allied Repair Bots),
+but never the player or itself. It chooses the nearest wounded ally.
+
+**Shields are a separate health pool**: attacks must remove all current shields
+before hull/structure HP can be reduced. Excess damage from a single hit
+carries through to hull after the shield is depleted. The shared damage model
+accepts separate shield and hull multipliers, ready for later energy/kinetic
+weapon behaviours, but no weapon bypasses an active shield.
+
+**Miniature health and shield bars** appear above any player ship or enemy
+whose hull or shields are below full strength. Green shows hull HP, blue
+shows shields. Bars are omitted when both pools are full.
+
+A **compact bottom HUD** displays live movement speed (world units/second),
+thrust input percentage, hull HP, shield HP and weapon heat. Primary shots
+add six heat, cooling naturally at 12 heat per second. Heat is currently
+informational: it does not throttle the basic weapon. Slots for **secondary
+weapon/ammo and ability cooldown** explicitly show unavailable until those
+systems are added, rather than suggesting nonexistent equipment.
+
 ## Two heavy asteroids
 
 Two irregular, slate-coloured asteroids provide additional cover in the
@@ -94,7 +123,8 @@ The smoke test covers conserved momentum, slow thrust, braking, core impacts,
 Local Drone detection range and rock/core occlusion, heavy asteroid impulses,
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
-body impulses, death explosions and debris particles, segmented wall flashes,
+shield-first damage and healing, Repair Bot targeting and tether, mixed waves,
+live bottom HUD, body impulses, death explosions and debris, wall flashes,
 bullet headings, range disintegration, controller pause and wave respawns.
 
 Manual playtest:
@@ -118,8 +148,15 @@ Manual playtest:
   neither hull changes shape or blinks.
 - Let the ship lose its last hull point: observe a broad debris explosion
   before the game-over message appears; restart with Enter or controller Y.
+- Shoot a shielded Repair Bot: its blue shield pool must reach zero before
+  the green health pool is damaged. The shield/health mini-bars should appear.
+- Injure a Local Drone and watch a nearby Repair Bot connect its green
+  electrical tether and replenish health; check that it never heals the player.
+- Check the bottom HUD updates with speed, thrust percentage, health,
+  shields and heat. Secondary ammo/cooldown should explicitly say unavailable.
 - Destroy a drone and verify its debris burst.
-- Clear a wave, pause during the countdown, then watch 3–5 drones return.
+- Clear a wave, pause during the countdown, then watch 2–4 Local Drones
+  and one Repair Bot return.
 
 All visuals are procedural line art; no external sprites or plugins are needed.
 There is no audio, settings or save system yet. `docs/ROADMAP.md` retains the
