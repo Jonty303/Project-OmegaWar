@@ -471,6 +471,45 @@ func run() -> void:
 	patient.free()
 	medic.free()
 
+	# Repair Bot must remain assigned to its original patient, regardless of
+	# more convenient newcomers, until that patient is healed or destroyed.
+	var assigned_bot = game.RepairBot.new()
+	assigned_bot.position = Vector2(240, 250)
+	var first_patient = game.Enemy.new()
+	first_patient.position = Vector2(360, 250)
+	first_patient.health = 1.0
+	var new_patient = game.Enemy.new()
+	new_patient.position = Vector2(265, 250)
+	new_patient.health = 1.0
+	game.add_child(assigned_bot)
+	game.add_child(first_patient)
+	game.add_child(new_patient)
+	var waiting_allies: Array[Node2D] = [assigned_bot, first_patient]
+	check(assigned_bot.MOVE_SPEED == 105.0 and assigned_bot.ACCELERATION == 150.0, "Repair Bots move slightly faster")
+	check(assigned_bot.TETHER_RANGE == 170.0, "Repair tether reaches further")
+	assigned_bot.step_support(0.1, waiting_allies, game.arena)
+	check(assigned_bot.assigned_patient == first_patient and assigned_bot.tether_target == first_patient, "First wounded ally becomes assigned patient")
+	waiting_allies.append(new_patient)
+	var unserved_health: float = new_patient.health
+	assigned_bot.step_support(0.2, waiting_allies, game.arena)
+	check(assigned_bot.assigned_patient == first_patient, "Closer wounded ally cannot interrupt current assignment")
+	check(new_patient.health == unserved_health, "Another injured ally waits until current patient is healed")
+	first_patient.receive_healing(2.0, 2.0)
+	assigned_bot.step_support(0.1, waiting_allies, game.arena)
+	check(assigned_bot.assigned_patient == new_patient and assigned_bot.tether_target == new_patient, "Bot switches to next patient only after full recovery")
+	first_patient.health = 1.0
+	assigned_bot.step_support(0.1, waiting_allies, game.arena)
+	check(assigned_bot.assigned_patient == new_patient, "Reinjured original patient does not steal current assignment")
+	new_patient.health = 0.0
+	assigned_bot.step_support(0.1, waiting_allies, game.arena)
+	check(assigned_bot.assigned_patient == first_patient, "Patient death releases current healing assignment")
+	waiting_allies.erase(first_patient)
+	assigned_bot.step_support(0.1, waiting_allies, game.arena)
+	check(assigned_bot.assigned_patient == null and assigned_bot.tether_target == null, "Removed patient clears assignment safely")
+	assigned_bot.free()
+	first_patient.free()
+	new_patient.free()
+
 
 	# An actual shield hit alerts observers able to SEE the impact, never
 	# revealing the unseen attacker's position.
@@ -537,6 +576,39 @@ func run() -> void:
 	check(struck.alert_to_ally_hit(struck.position, game.arena, true), "Drone notices being struck even with turret backwards")
 	check(struck.searching and struck.last_seen_position == Vector2.ZERO, "Own shot impact does not reveal shooter")
 	struck.free()
+
+	# A wounded Local Drone looks back along the projectile's path, not at
+	# the unseen attacker's real position, with a finite turret turn rate.
+	var counterfire = game.Enemy.new()
+	counterfire.position = Vector2(350, 230)
+	counterfire.turret_angle = PI / 2.0
+	game.add_child(counterfire)
+	check(is_equal_approx(counterfire.TURRET_TURN_RATE, 7.5), "Sentry gun tracks faster when alerted")
+	counterfire.react_to_incoming_shot(Vector2(415, 0), game.arena)
+	check(counterfire.searching and counterfire.search_goal.x < counterfire.position.x, "Hit from left initiates investigation left")
+	check(absf(counterfire.search_goal.y - counterfire.position.y) < 0.01, "Firing-line investigation has correct bearing")
+	check(not counterfire.spotted_once and counterfire.last_seen_position == Vector2.ZERO, "Incoming bearing does not reveal player position")
+	check(is_equal_approx(counterfire.turret_angle, PI / 2.0), "Turret does not snap instantly after a hit")
+	counterfire.step(0.1, Vector2(1030, 680), game.arena)
+	check(counterfire.turret_angle > PI / 2.0 and counterfire.turret_angle < PI, "Sentry visibly rotates toward incoming fire")
+	check(not counterfire.ready_to_fire(Vector2(1030, 680), game.arena), "No blind counterfire without seeing target")
+	counterfire.free()
+
+	# Real projectile hit through game coordinator also passes shot direction.
+	var hit_sentry = game.Enemy.new()
+	hit_sentry.position = Vector2(350, 230)
+	hit_sentry.turret_angle = PI / 2.0
+	game.add_child(hit_sentry)
+	game.enemies.append(hit_sentry)
+	game.ship.position = Vector2(110, 600)
+	game.spawn_shot(Vector2(260, 230), Vector2(415, 0), false)
+	game.step_shots(0.25)
+	check(is_equal_approx(hit_sentry.health, 1.0), "Projectile damage still registers")
+	check(hit_sentry.searching and hit_sentry.search_goal.x < hit_sentry.position.x, "Actual hit redirects drone toward source bearing")
+	check(hit_sentry.alert_flash > 0.0, "Directly struck sentry displays alert")
+	check(hit_sentry.last_seen_position == Vector2.ZERO, "Sentry cannot learn attacker position from bullet alone")
+	game.enemies.clear()
+	hit_sentry.free()
 
 	# Integrate sentry fire through the main coordinator.
 	var shooter = game.Enemy.new()
