@@ -3,13 +3,16 @@ extends "res://scripts/projectile.gd"
 # A moving missile: bounces off solid walls, explodes against ships/asteroids,
 # and detonates on running out of range or life. Blast is never team-filtered.
 const ROCKET_RADIUS := 5.0
-var blast_radius := 95.0
-var blast_impulse := 235.0
+const Launcher = preload("res://scripts/secondary_rockets.gd")
+var blast_radius := Launcher.BLAST_RADIUS
+var blast_impulse := Launcher.BLAST_IMPULSE
 var trail_time := 0.0
 
 func _init() -> void:
 	is_rocket = true
 	hit_radius = ROCKET_RADIUS
+	damage = Launcher.DAMAGE
+	max_range = Launcher.MAX_RANGE
 	bounces_left = 3
 	lifetime = 3.2
 
