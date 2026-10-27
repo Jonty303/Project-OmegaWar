@@ -72,7 +72,7 @@ func run() -> void:
 	var target = game.Enemy.new()
 	target.position = Vector2(320, 210)
 	target.velocity = Vector2.ZERO
-	target.health = 1
+	target.health = 2
 	game.add_child(target)
 	game.enemies.append(target)
 	game.ship.position = Vector2(297, 210)
