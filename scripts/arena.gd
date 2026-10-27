@@ -1,12 +1,16 @@
 extends Node2D
 
 const Projectile = preload("res://scripts/projectile.gd")
+const Asteroid = preload("res://scripts/asteroid.gd")
 
 const BOUNDS := Rect2(40, 110, 1120, 630)
 const CORE := Rect2(490, 330, 220, 190)
 const FLASH_SECONDS := 0.26
 
 signal wall_bounced(at: Vector2, speed: float)
+signal asteroid_struck(at: Vector2, power: float)
+
+var asteroids: Array[Node2D] = []
 
 # Five sections along horizontal outer walls, three along vertical sides.
 # Segments also outline the central obstacle, each with independent flashes.
@@ -14,6 +18,92 @@ var segments: Array[Dictionary] = []
 
 func _ready() -> void:
 	build_sections()
+	spawn_asteroids()
+
+func spawn_asteroids() -> void:
+	# Two persistent pieces of cover in the upper-right corner.
+	for spec in [
+		{"at": Vector2(924, 226), "radius": 37.0, "mass": 24.0},
+		{"at": Vector2(1038, 311), "radius": 30.0, "mass": 19.0}
+	]:
+		var rock := Asteroid.new()
+		rock.configure(spec["at"], spec["radius"], spec["mass"])
+		asteroids.append(rock)
+		add_child(rock)
+
+func reset_asteroids() -> void:
+	for rock in asteroids:
+		rock.reset_rock()
+
+func asteroid_at(point: Vector2, padding: float = 0.0):
+	for rock in asteroids:
+		if point.distance_squared_to(rock.position) < pow(rock.radius + padding, 2.0):
+			return rock
+	return null
+
+func blocked_static(point: Vector2, radius: float = 0.0) -> bool:
+	return not BOUNDS.grow(-radius).has_point(point) or CORE.grow(radius).has_point(point)
+
+func circle_segment_hits(from: Vector2, to: Vector2, center: Vector2, radius: float) -> bool:
+	var closest: Vector2 = Geometry2D.get_closest_point_to_segment(center, from, to)
+	return closest.distance_squared_to(center) <= radius * radius
+
+func clear_for_rock(rock: Node2D, point: Vector2) -> bool:
+	if blocked_static(point, rock.radius):
+		return false
+	for other in asteroids:
+		if other != rock and point.distance_squared_to(other.position) < pow(rock.radius + other.radius + 3.0, 2.0):
+			return false
+	return true
+
+func advance_asteroids(delta: float, bodies: Array[Node2D]) -> void:
+	# Heavy rocks drift under impulses; environmental resistance eventually
+	# settles them, unlike the player's frictionless inertial movement.
+	for rock in asteroids:
+		var speed: float = rock.velocity.length()
+		if speed < 0.06:
+			rock.velocity = Vector2.ZERO
+			continue
+		var steps := maxi(1, int(ceil(speed * delta / 4.0)))
+		for i in range(steps):
+			var next: Vector2 = rock.position + rock.velocity * delta / float(steps)
+			if not clear_for_rock(rock, next):
+				rock.velocity *= -0.10
+				break
+			var blocked_by_body := false
+			for body in bodies:
+				if not is_instance_valid(body) or not body.visible:
+					continue
+				var body_radius: float = 11.0 if body == bodies[0] else 14.0
+				var reach: float = rock.radius + body_radius
+				if body.position.distance_squared_to(next) >= reach * reach:
+					continue
+				var normal: Vector2 = (body.position - next).normalized()
+				if normal.is_zero_approx():
+					normal = Vector2.RIGHT
+				var correction: Vector2 = next + normal * reach
+				# The actor can be pushed safely, but never takes rock damage.
+				if not blocked_static(correction, body_radius) and asteroid_at(correction, body_radius) == rock:
+					body.position = correction
+					body.velocity += normal * minf(speed * 0.30, 38.0)
+				else:
+					blocked_by_body = true
+				rock.velocity *= 0.7
+			if blocked_by_body:
+				break
+			rock.position = next
+		rock.velocity *= exp(-Asteroid.DRAG * delta)
+
+func apply_blast(at: Vector2, strength: float, reach: float) -> void:
+	for rock in asteroids:
+		var offset: Vector2 = rock.position - at
+		var distance: float = offset.length()
+		if distance > reach + rock.radius:
+			continue
+		var attenuation: float = 1.0 - clampf(distance / (reach + rock.radius), 0.0, 1.0)
+		var bearing: Vector2 = offset.normalized() if distance > 0.01 else Vector2.RIGHT
+		rock.apply_impulse(bearing * strength * attenuation)
+
 
 func add_sections(a: Vector2, b: Vector2, count: int, inner: bool) -> void:
 	for i in range(count):
@@ -94,22 +184,41 @@ func register_bounce(next: Vector2, radius: float, x_axis: bool, travel: float, 
 		wall_bounced.emit(at, speed)
 
 func blocked(point: Vector2, radius: float = 0.0) -> bool:
-	return not BOUNDS.grow(-radius).has_point(point) or CORE.grow(radius).has_point(point)
+	return blocked_static(point, radius) or asteroid_at(point, radius) != null
+
+func asteroid_body_impact(at: Vector2, velocity: Vector2, radius: float) -> Vector2:
+	var rock = asteroid_at(at, radius)
+	if rock == null:
+		return velocity
+	var normal: Vector2 = (at - rock.position).normalized()
+	if normal.is_zero_approx():
+		normal = -velocity.normalized() if not velocity.is_zero_approx() else Vector2.RIGHT
+	var closing: float = maxf(0.0, -(velocity - rock.velocity).dot(normal))
+	if closing <= 0.0:
+		return velocity
+	# Treat ship/drone as about one mass unit and asteroid as ~20.
+	var impulse: float = 1.08 * closing / (1.0 + 1.0 / rock.mass)
+	rock.apply_impulse(-normal * impulse)
+	return velocity + normal * impulse
 
 func move_body(body: Node2D, velocity: Vector2, radius: float, delta: float) -> Vector2:
 	# The only drag on moving objects is from explicit inputs or collisions.
 	var steps := maxi(1, int(ceil(velocity.length() * delta / 8.0)))
 	for step in range(steps):
 		var next := body.position + Vector2(velocity.x * delta / steps, 0)
-		if blocked(next, radius):
+		if blocked_static(next, radius):
 			register_bounce(next, radius, true, velocity.x, absf(velocity.x), true)
 			velocity.x *= -0.7
+		elif asteroid_at(next, radius) != null:
+			velocity = asteroid_body_impact(next, velocity, radius)
 		else:
 			body.position = next
 		next = body.position + Vector2(0, velocity.y * delta / steps)
-		if blocked(next, radius):
+		if blocked_static(next, radius):
 			register_bounce(next, radius, false, velocity.y, absf(velocity.y), true)
 			velocity.y *= -0.7
+		elif asteroid_at(next, radius) != null:
+			velocity = asteroid_body_impact(next, velocity, radius)
 		else:
 			body.position = next
 	return velocity
@@ -124,7 +233,10 @@ func move_shot(shot: Projectile, delta: float) -> void:
 			return
 		var dt := delta / steps
 		var proposed: Vector2 = shot.position + Vector2(shot.velocity.x * dt, 0)
-		if blocked(proposed, Projectile.HIT_RADIUS):
+		if asteroid_at(proposed, Projectile.HIT_RADIUS) != null:
+			strike_asteroid(shot, proposed)
+			return
+		if blocked_static(proposed, Projectile.HIT_RADIUS):
 			register_bounce(proposed, Projectile.HIT_RADIUS, true, shot.velocity.x, absf(shot.velocity.x), false)
 			shot.velocity.x = -shot.velocity.x
 			shot.sync_visual_heading()
@@ -132,7 +244,10 @@ func move_shot(shot: Projectile, delta: float) -> void:
 		else:
 			shot.position = proposed
 		proposed = shot.position + Vector2(0, shot.velocity.y * dt)
-		if blocked(proposed, Projectile.HIT_RADIUS):
+		if asteroid_at(proposed, Projectile.HIT_RADIUS) != null:
+			strike_asteroid(shot, proposed)
+			return
+		if blocked_static(proposed, Projectile.HIT_RADIUS):
 			register_bounce(proposed, Projectile.HIT_RADIUS, false, shot.velocity.y, absf(shot.velocity.y), false)
 			shot.velocity.y = -shot.velocity.y
 			shot.sync_visual_heading()
@@ -141,11 +256,25 @@ func move_shot(shot: Projectile, delta: float) -> void:
 			shot.position = proposed
 		shot.distance_travelled += starting_position.distance_to(shot.position)
 
+func strike_asteroid(shot: Projectile, next: Vector2) -> void:
+	var rock = asteroid_at(next, Projectile.HIT_RADIUS)
+	if rock == null:
+		return
+	# Transfer only a small fraction of projectile momentum to heavy cover.
+	rock.apply_impulse(shot.velocity.normalized() * 85.0)
+	shot.begin_disintegrate()
+	asteroid_struck.emit(shot.position, shot.velocity.length())
+
 func has_line_of_sight(from: Vector2, to: Vector2) -> bool:
 	# Sensor and weapon checks use the same obstruction geometry as navigation.
 	if blocked(from) or blocked(to):
 		return false
-	return not segment_hits_rect(from, to, CORE.grow(1.0))
+	if segment_hits_rect(from, to, CORE.grow(1.0)):
+		return false
+	for rock in asteroids:
+		if circle_segment_hits(from, to, rock.position, rock.radius + 2.0):
+			return false
+	return true
 
 func segment_hits_rect(from: Vector2, to: Vector2, rect: Rect2) -> bool:
 	# Rect2 has no intersects_segment() method in Godot 4.5.
@@ -162,11 +291,18 @@ func segment_hits_rect(from: Vector2, to: Vector2, rect: Rect2) -> bool:
 		or Geometry2D.segment_intersects_segment(from, to, d, a) != null
 	)
 
+func navigation_clear(from: Vector2, to: Vector2, radius: float) -> bool:
+	if segment_hits_rect(from, to, CORE.grow(radius + 4.0)):
+		return false
+	for rock in asteroids:
+		if circle_segment_hits(from, to, rock.position, rock.radius + radius + 4.0):
+			return false
+	return true
+
 func approach_waypoint(origin: Vector2, goal: Vector2, radius: float) -> Vector2:
-	# Tiny visibility graph over the four corners of an inflated core.
-	# Returns the first navigable waypoint in the shortest unobstructed route.
-	var obstacle := CORE.grow(radius + 4.0)
-	if not segment_hits_rect(origin, goal, obstacle):
+	# Visibility graph uses core corners plus octagonal ring waypoints
+	# around each movable asteroid; updated against their current locations.
+	if navigation_clear(origin, goal, radius):
 		return goal
 	var corner_box := CORE.grow(radius + 22.0)
 	var nodes: Array[Vector2] = [
@@ -176,6 +312,12 @@ func approach_waypoint(origin: Vector2, goal: Vector2, radius: float) -> Vector2
 		corner_box.end,
 		Vector2(corner_box.position.x, corner_box.end.y)
 	]
+	for rock in asteroids:
+		for i in range(8):
+			var theta: float = TAU * float(i) / 8.0
+			var pt: Vector2 = rock.position + Vector2.from_angle(theta) * (rock.radius + radius + 23.0)
+			if not blocked_static(pt, radius):
+				nodes.append(pt)
 	var costs: Array[float] = []
 	var previous: Array[int] = []
 	var visited: Array[bool] = []
@@ -195,7 +337,7 @@ func approach_waypoint(origin: Vector2, goal: Vector2, radius: float) -> Vector2
 		for j in range(1, nodes.size()):
 			if j == best or visited[j]:
 				continue
-			if segment_hits_rect(nodes[best], nodes[j], obstacle):
+			if not navigation_clear(nodes[best], nodes[j], radius):
 				continue
 			var candidate := costs[best] + nodes[best].distance_to(nodes[j])
 			if candidate < costs[j]:
