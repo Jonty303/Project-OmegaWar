@@ -34,7 +34,8 @@ func run() -> void:
 	game.ship.heat = 0.0
 	check(game.arena.segments.size() == 28, "Segmented outer walls and core")
 	check(game.Enemy.SHORT_VISION_RANGE == 90.0 and game.Enemy.LONG_VISION_RANGE == 400.0, "Local Drone has near-360 and long forward sensors")
-	check(game.Enemy.WEAPON_RANGE == 240.0 and is_equal_approx(game.Enemy.FRONT_VISION_HALF_ANGLE, deg_to_rad(25.0)), "Forward view widens to 50 degrees without changing weapon range")
+	check(game.Enemy.WEAPON_RANGE == 240.0 and is_equal_approx(game.Enemy.FRONT_VISION_HALF_ANGLE, deg_to_rad(30.0)), "Forward vision now spans 60 degrees without changing weapon range")
+	check(is_equal_approx(game.Enemy.IDLE_SWEEP, 0.85) and is_equal_approx(game.Enemy.LOOK_SWEEP, 1.55), "Idle and investigation turret scans use wider arcs")
 	var wide_view = game.Enemy.new()
 	wide_view.position = Vector2(350, 140)
 	wide_view.turret_angle = 0.0
@@ -42,6 +43,12 @@ func run() -> void:
 	check(wide_view.has_sight_on(Vector2(745, 140), game.arena), "Extended forward view reaches almost 400 units")
 	check(not wide_view.has_sight_on(Vector2(755, 140), game.arena), "Long-range view still has a hard limit")
 	wide_view.free()
+	var expanded_cone = game.Enemy.new()
+	expanded_cone.position = Vector2(150, 200)
+	expanded_cone.turret_angle = 0.0
+	check(expanded_cone.has_sight_on(Vector2(450, 355), game.arena), "Target 27 degrees off gun is now visible")
+	check(not expanded_cone.has_sight_on(Vector2(410, 360), game.arena), "Target beyond 30-degree half-angle remains invisible")
+	expanded_cone.free()
 	check(is_equal_approx(game.arena.WALL_RESTITUTION, 0.985), "Walls preserve 98.5 percent of impact speed")
 	check(game.StatusBars.SHIELD_BAR_Y_OFFSET < game.StatusBars.HEALTH_BAR_Y_OFFSET, "Shield bar is physically above hull health")
 	check(game.arena.asteroids.size() == 2, "Exactly two permanent asteroids")
@@ -339,6 +346,69 @@ func run() -> void:
 	game.ship.velocity = Vector2.ZERO
 
 
+
+	# All three drone types use shared physical radii and personal space.
+	check(game.arena.DRONE_GAP >= 10.0 and game.arena.DRONE_HARD_GAP > 0.0, "Drones maintain a short separation cushion")
+	var blocker = game.Enemy.new()
+	blocker.position = Vector2(285, 240)
+	var pathfinder = game.Enemy.new()
+	pathfinder.position = Vector2(220, 240)
+	var support_blocker = game.RepairBot.new()
+	support_blocker.position = Vector2(460, 235)
+	game.add_child(pathfinder)
+	game.add_child(blocker)
+	game.add_child(support_blocker)
+	game.enemies.append(pathfinder)
+	game.enemies.append(blocker)
+	game.enemies.append(support_blocker)
+	game.arena.set_drone_bodies(game.enemies)
+	var unmodified: Vector2 = Vector2(54, 0)
+	var diverted: Vector2 = game.arena.avoid_drones(pathfinder, unmodified)
+	check(absf(diverted.y) > 1.0, "Drone steers sideways around another unit rather than running into it")
+	check(game.arena.avoid_drones(pathfinder, Vector2.ZERO).is_zero_approx(), "Idle drone does not drift without cause")
+	# Even a forced straight-line command cannot make two drones overlap.
+	for travel_frame in range(150):
+		var proposed: Vector2 = game.arena.move_body(pathfinder, Vector2(54, 0), pathfinder.COLLISION_RADIUS, 1.0 / 60.0)
+		check(pathfinder.position.distance_to(blocker.position) >= pathfinder.COLLISION_RADIUS + blocker.COLLISION_RADIUS + game.arena.DRONE_HARD_GAP - 0.001, "Movement physically excludes occupied drone space")
+		if proposed.is_zero_approx():
+			break
+	# The same clearance prevents a support bot approaching its patient
+	# from occupying the latter's location.
+	support_blocker.position = Vector2(400, 240)
+	check(not game.arena.drone_free(blocker.position, support_blocker.COLLISION_RADIUS, support_blocker), "Repair Bot cannot choose ally's occupied location")
+	check(absf(game.arena.avoid_drones(support_blocker, Vector2(-105, 0)).y) > 1.0, "Repair Bot steers around an allied drone")
+	game.enemies.clear()
+	game.arena.set_drone_bodies(game.enemies)
+	pathfinder.free()
+	blocker.free()
+	support_blocker.free()
+
+	# Forced collisions and blasts can briefly overlap drones; the solver
+	# must separate the different body sizes without causing damage.
+	var crowded_a = game.Enemy.new()
+	var crowded_b = game.LongRangeDrone.new()
+	var crowded_c = game.RepairBot.new()
+	crowded_a.position = Vector2(350, 240)
+	crowded_b.position = Vector2(350, 240)
+	crowded_c.position = Vector2(350, 240)
+	game.add_child(crowded_a)
+	game.add_child(crowded_b)
+	game.add_child(crowded_c)
+	game.enemies.append(crowded_a)
+	game.enemies.append(crowded_b)
+	game.enemies.append(crowded_c)
+	game.resolve_drone_spacing()
+	for first_index in range(game.enemies.size()):
+		for second_index in range(first_index + 1, game.enemies.size()):
+			var a = game.enemies[first_index]
+			var b = game.enemies[second_index]
+			check(a.position.distance_to(b.position) >= a.COLLISION_RADIUS + b.COLLISION_RADIUS + game.arena.DRONE_HARD_GAP - 0.05, "Overlapping mixed drones separate without sharing space")
+	check(crowded_a.health == crowded_a.max_health and crowded_b.health == crowded_b.max_health and crowded_c.health == crowded_c.max_health, "Drone-on-drone separation never damages teammates")
+	for unit in game.enemies:
+		unit.free()
+	game.enemies.clear()
+	game.arena.set_drone_bodies(game.enemies)
+
 	# The new long-range Local Drone inherits core sentry perception but
 	# tries to keep a safe minimum distance and uses a slower guided weapon.
 	var standoff = game.LongRangeDrone.new()
@@ -473,6 +543,11 @@ func run() -> void:
 		else:
 			ordinary_units += 1
 	check(missile_units == 1 and support_units == 1 and ordinary_units >= 2, "Mixed wave adds one standoff drone and one repair unit")
+	for i in range(game.enemies.size()):
+		for j in range(i + 1, game.enemies.size()):
+			var first = game.enemies[i]
+			var second = game.enemies[j]
+			check(first.position.distance_to(second.position) > first.COLLISION_RADIUS + second.COLLISION_RADIUS + game.arena.DRONE_GAP, "Mixed waves spawn with a personal-space gap")
 	check(game.enemies.size() >= 4 and game.enemies.size() <= 5, "Mixed wave remains compact")
 	for unit in game.enemies:
 		unit.free()
