@@ -12,6 +12,7 @@ const SHIELD_REPAIR_RATE := 0.75
 const DamageModel = preload("res://scripts/combat_health.gd")
 
 var is_repair_bot := true
+var is_missile_drone := false
 var velocity := Vector2.ZERO
 var health := MAX_HEALTH
 var shields := MAX_SHIELDS
