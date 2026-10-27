@@ -3,10 +3,18 @@ extends Node2D
 const COLLISION_RADIUS := 11.0
 const THRUST_ACCELERATION := 145.0
 const Weapon = preload("res://scripts/weapon.gd")
+const DamageModel = preload("res://scripts/combat_health.gd")
 
 var weapon := Weapon.new()
 var velocity := Vector2.ZERO
-var hull := 3
+var hull := 3.0
+var max_hull := 3.0
+var shields := 2.0
+var max_shields := 2.0
+var heat := 0.0
+const MAX_HEAT := 100.0
+const COOLING_RATE := 12.0
+const FIRE_HEAT := 6.0
 var invulnerable := 2.0
 var thrusting := false
 
@@ -22,13 +30,20 @@ func step(delta: float, arena: Node2D) -> void:
 	# No speed clamp: velocity only changes through deliberate forces.
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
+	heat = maxf(0.0, heat - COOLING_RATE * delta)
 	weapon.tick(delta)
 	queue_redraw()
 
-func hit() -> bool:
+func fired_primary() -> void:
+	# Heat is tracked for the new HUD; no heat lockout until weapons are tuned.
+	heat = minf(MAX_HEAT, heat + FIRE_HEAT)
+
+func hit(amount: float = 1.0, shield_factor: float = 1.0, hull_factor: float = 1.0) -> bool:
 	if invulnerable > 0.0:
 		return false
-	hull -= 1
+	var result: Vector2 = DamageModel.apply(hull, shields, amount, shield_factor, hull_factor)
+	hull = result.x
+	shields = result.y
 	invulnerable = 1.3
 	queue_redraw()
 	return true

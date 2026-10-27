@@ -10,7 +10,6 @@ const TETHER_RANGE := 148.0
 const HULL_REPAIR_RATE := 0.9
 const SHIELD_REPAIR_RATE := 0.75
 const DamageModel = preload("res://scripts/combat_health.gd")
-const StatusBars = preload("res://scripts/status_bars.gd")
 
 var is_repair_bot := true
 var velocity := Vector2.ZERO
@@ -102,4 +101,3 @@ func _draw() -> void:
 			path.append(target * fraction + normal * flicker)
 		draw_polyline(path, Color(0.14, 1.0, 0.39, 0.95), 2.0, true)
 		draw_circle(target, 4.0 + sin(tether_phase) * 0.9, Color(0.24, 1.0, 0.53, 0.8), false, 1.6, true)
-	StatusBars.draw_for(self, health, max_health, shields, max_shields, -32.0)

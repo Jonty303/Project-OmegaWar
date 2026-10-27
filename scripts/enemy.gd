@@ -2,6 +2,7 @@ extends Node2D
 
 # Local Drone: a territorial sentry, not a continuously homing attacker.
 const COLLISION_RADIUS := 14.0
+const DamageModel = preload("res://scripts/combat_health.gd")
 const VISION_RANGE := 250.0
 const WEAPON_RANGE := 200.0
 const TRAVEL_SPEED := 54.0
@@ -13,7 +14,11 @@ const MUZZLE_DISTANCE := 19.0
 const SEARCH_DISTANCE := 170.0
 
 var velocity := Vector2.ZERO
-var health := 2
+var health := 2.0
+var max_health := 2.0
+var shields := 0.0
+var max_shields := 0.0
+var is_repair_bot := false
 var fire_timer := 1.8
 var collision_cooldown := 0.0
 var turret_angle := 0.0
@@ -89,11 +94,23 @@ func turret_direction() -> Vector2:
 func fired() -> void:
 	fire_timer = FIRE_INTERVAL + randf_range(-0.20, 0.20)
 
+func receive_healing(hull_amount: float, shield_amount: float) -> void:
+	health = minf(max_health, health + maxf(0.0, hull_amount))
+	shields = minf(max_shields, shields + maxf(0.0, shield_amount))
+	queue_redraw()
+
+func take_damage(amount: float, shield_factor: float = 1.0, hull_factor: float = 1.0) -> bool:
+	var result: Vector2 = DamageModel.apply(health, shields, amount, shield_factor, hull_factor)
+	health = result.x
+	shields = result.y
+	queue_redraw()
+	return health <= 0.0
+
 func impact(speed: float) -> bool:
 	if speed >= 100.0 and collision_cooldown <= 0.0:
-		health -= 1
 		collision_cooldown = 0.6
-	return health <= 0
+		return take_damage(1.0)
+	return health <= 0.0
 
 func _draw() -> void:
 	var shell := Color(1.0, 0.4, 0.25)
