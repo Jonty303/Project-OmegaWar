@@ -53,7 +53,7 @@ func run() -> void:
 	game.ship.position = Vector2(60, 200)
 	game.ship.velocity = Vector2(-520, 0)
 	game.ship.step(0.2, game.arena, Vector2.ZERO)
-	check(not game.arena.blocked(game.ship.position, 14), "Boundary collision")
+	check(not game.arena.blocked(game.ship.position, game.Ship.COLLISION_RADIUS), "Boundary collision")
 	game.ship.velocity = Vector2.ZERO
 	for i in range(3):
 		game.ship.position = game.pickups[0].position
