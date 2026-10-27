@@ -337,6 +337,128 @@ func run() -> void:
 	game.ship.position = Vector2(220, 425)
 	game.ship.velocity = Vector2.ZERO
 
+
+	# The new long-range Local Drone inherits core sentry perception but
+	# tries to keep a safe minimum distance and uses a slower guided weapon.
+	var standoff = game.LongRangeDrone.new()
+	standoff.position = Vector2(300, 230)
+	standoff.turret_angle = 0.0
+	standoff.fire_timer = 0.0
+	game.add_child(standoff)
+	check(standoff.is_missile_drone and standoff.health == 3.0 and standoff.shields == 1.0, "Long-range variant has a distinct identity and protection")
+	check(standoff.combat_destination(Vector2(435, 230), game.arena).x < standoff.position.x, "Long-range drone retreats when player crosses minimum distance")
+	check(standoff.combat_destination(Vector2(620, 230), game.arena).is_equal_approx(standoff.position), "Long-range drone holds its desired standoff distance")
+	check(standoff.combat_destination(Vector2(685, 230), game.arena).x > standoff.position.x, "Long-range drone advances if player is beyond its preferred band")
+	check(not standoff.ready_to_fire(Vector2(435, 230), game.arena), "Missile launcher will not fire inside minimum standoff distance")
+	standoff.can_see_player = true
+	check(standoff.ready_to_fire(Vector2(620, 230), game.arena), "Missile fires only with sight, range and barrel alignment")
+	standoff.step(0.1, Vector2(435, 230), game.arena)
+	check(standoff.velocity.x < 0.0, "Drone actually backs away from close player")
+	standoff.position = Vector2(300, 230)
+	standoff.velocity = Vector2.ZERO
+	standoff.can_see_player = true
+	standoff.fire_timer = 0.0
+	standoff.turret_angle = 0.0
+	standoff.step(0.016, Vector2(620, 230), game.arena)
+	check(standoff.ready_to_fire(Vector2(620, 230), game.arena), "Long-range gun acquires distant visible player")
+	standoff.free()
+
+	# Guided missile turns gradually, then detonates at the first barrier
+	# rather than reflecting. Core and exterior walls both count.
+	var turn_missile = game.HomingMissile.new()
+	turn_missile.position = Vector2(210, 220)
+	turn_missile.velocity = Vector2(375, 0)
+	turn_missile.steer(0.1, Vector2(210, 100))
+	check(turn_missile.is_homing and turn_missile.hostile and turn_missile.velocity.y < 0.0, "Enemy missile steers toward player instead of flying straight")
+	check(turn_missile.velocity.x > 0.0 and is_equal_approx(turn_missile.velocity.length(), turn_missile.SPEED), "Homing turn is gradual at fixed missile speed")
+	check(turn_missile.blast_radius < game.Rocket.BLAST_RANGE and turn_missile.damage == 1.0, "Enemy missile has smaller blast and damage than player rocket")
+	turn_missile.free()
+
+	game.ship.position = Vector2(180, 600)
+	game.ship.velocity = Vector2.ZERO
+	var barrier_missile = game.HomingMissile.new()
+	barrier_missile.position = Vector2(478, 425)
+	barrier_missile.velocity = Vector2(375, 0)
+	barrier_missile.sync_visual_heading()
+	game.add_child(barrier_missile)
+	game.homing_missiles.append(barrier_missile)
+	var homing_effects_before: int = game.effects.size()
+	game.step_homing_missiles(0.05)
+	check(game.homing_missiles.is_empty(), "Homing missile explodes against the central barrier")
+	check(game.effects.size() > homing_effects_before, "Barrier hit creates a shockwave")
+
+	var edge_missile = game.HomingMissile.new()
+	edge_missile.position = Vector2(55, 225)
+	edge_missile.velocity = Vector2(-375, 0)
+	game.add_child(edge_missile)
+	game.homing_missiles.append(edge_missile)
+	game.step_homing_missiles(0.05)
+	check(game.homing_missiles.is_empty(), "Homing missile detonates on outside wall without bouncing")
+
+	game.arena.reset_asteroids()
+	var rock_missile = game.HomingMissile.new()
+	rock_missile.position = Vector2(875, 226)
+	rock_missile.velocity = Vector2(375, 0)
+	game.add_child(rock_missile)
+	game.homing_missiles.append(rock_missile)
+	game.step_homing_missiles(0.05)
+	check(game.homing_missiles.is_empty(), "Homing missile explodes against heavy asteroid")
+	game.arena.reset_asteroids()
+
+	# A missile detonates on friendly units too, creating small-area
+	# collateral damage rather than passing through allies.
+	var other_drone = game.Enemy.new()
+	other_drone.position = Vector2(360, 230)
+	game.add_child(other_drone)
+	game.enemies.append(other_drone)
+	var ally_missile = game.HomingMissile.new()
+	ally_missile.position = Vector2(340, 230)
+	ally_missile.velocity = Vector2(375, 0)
+	game.add_child(ally_missile)
+	game.homing_missiles.append(ally_missile)
+	game.step_homing_missiles(0.03)
+	check(game.homing_missiles.is_empty() and other_drone.health < other_drone.max_health, "Homing missile collides with and damages allied drones")
+	game.enemies.clear()
+	other_drone.free()
+
+	game.ship.position = Vector2(320, 240)
+	game.ship.velocity = Vector2.ZERO
+	game.ship.shields = 2.0
+	game.ship.hull = 3.0
+	game.ship.invulnerable = 0.0
+	var strike_missile = game.HomingMissile.new()
+	strike_missile.position = Vector2(303, 240)
+	strike_missile.velocity = Vector2(375, 0)
+	game.add_child(strike_missile)
+	game.homing_missiles.append(strike_missile)
+	game.step_homing_missiles(0.01)
+	check(game.homing_missiles.is_empty(), "Homing missile explodes on player contact")
+	check(game.ship.shields < 2.0 and game.ship.hull == 3.0, "Small explosion applies shield-first damage")
+	check(game.ship.velocity.length() > 0.0, "Guided missile explosion changes player inertia")
+
+	game.ship.position = Vector2(220, 425)
+	game.ship.velocity = Vector2.ZERO
+	game.ship.invulnerable = 2.0
+
+	# A mixed wave contains one long-range missile drone alongside ordinary
+	# sentries and a Repair Bot, without increasing overall wave size.
+	game.start_wave()
+	var missile_units := 0
+	var support_units := 0
+	var ordinary_units := 0
+	for unit in game.enemies:
+		if unit.is_missile_drone:
+			missile_units += 1
+		elif unit.is_repair_bot:
+			support_units += 1
+		else:
+			ordinary_units += 1
+	check(missile_units == 1 and support_units == 1 and ordinary_units >= 2, "Mixed wave adds one standoff drone and one repair unit")
+	check(game.enemies.size() >= 4 and game.enemies.size() <= 5, "Mixed wave remains compact")
+	for unit in game.enemies:
+		unit.free()
+	game.enemies.clear()
+
 	# Near-field detection is omnidirectional, but the long sensor is the gun's view.
 	var facing = game.Enemy.new()
 	facing.position = Vector2(250, 230)
@@ -684,8 +806,22 @@ func run() -> void:
 	game._unhandled_input(pause_button)
 	game._physics_process(1.0)
 	check(game.paused and is_equal_approx(game.wave_delay, 5.0), "Controller pause freezes countdown")
+	check(game.pause_menu_layer.visible and game.pause_reset_button.text == "RESET RUN", "Pause displays Reset Run button")
+	check(game.pause_resume_button.text == "RESUME", "Pause menu provides Resume action")
 	game._unhandled_input(pause_button)
-	check(not game.paused, "Controller resumes")
+	check(not game.paused and not game.pause_menu_layer.visible, "Controller resumes and hides menu")
+	# Old Enter/Y restart hotkeys must not bypass the menu.
+	var prior_wave: int = game.wave
+	var old_restart := InputEventKey.new()
+	old_restart.physical_keycode = KEY_ENTER
+	old_restart.pressed = true
+	game._unhandled_input(old_restart)
+	check(game.wave == prior_wave and not game.paused, "Enter cannot reset a running game")
+	var old_pad_restart := InputEventJoypadButton.new()
+	old_pad_restart.button_index = JOY_BUTTON_Y
+	old_pad_restart.pressed = true
+	game._unhandled_input(old_pad_restart)
+	check(game.wave == prior_wave, "Y cannot reset a running game")
 
 	# Final player hit creates a large, visible death cloud BEFORE game over.
 	game.ship.hull = 1
@@ -701,6 +837,10 @@ func run() -> void:
 	check(game.dying and not game.game_over and wreckage.remaining > 0.0, "Death debris remains visible before game over")
 	game._physics_process(0.55)
 	check(game.game_over and not game.dying, "Game over waits until debris animation")
+	check(game.paused and game.pause_menu_layer.visible, "Game over opens the pause menu for restart")
+	check(game.pause_resume_button.disabled, "Resume is disabled after ship destruction")
+	game.reset_from_menu()
+	check(not game.paused and not game.pause_menu_layer.visible and not game.game_over, "Pause-menu Reset Run starts a fresh game")
 
 	game.reset()
 	check(game.ship.visible and not game.game_over and not game.dying, "Restart restores player ship")
