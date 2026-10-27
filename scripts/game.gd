@@ -6,12 +6,15 @@ const Enemy = preload("res://scripts/enemy.gd")
 const RepairBot = preload("res://scripts/repair_bot.gd")
 const StatusBars = preload("res://scripts/status_bars.gd")
 const Projectile = preload("res://scripts/projectile.gd")
+const Rocket = preload("res://scripts/rocket.gd")
+const Explosion = preload("res://scripts/explosion.gd")
 const ImpactParticles = preload("res://scripts/impact_particles.gd")
 
 var arena := Arena.new()
 var ship: Node2D
 var enemies: Array[Node2D] = []
 var shots: Array[Node2D] = []
+var rockets: Array[Node2D] = []
 var effects: Array[Node2D] = []
 var score := 0
 var wave := 0
@@ -31,6 +34,8 @@ func _ready() -> void:
 	bind_key("turn_right", [KEY_D, KEY_RIGHT])
 	bind_key("thrust", [KEY_W, KEY_UP])
 	bind_key("brake", [KEY_S, KEY_DOWN])
+	bind_key("special", [KEY_SHIFT])
+	bind_key("fire_secondary", [KEY_Q])
 	bind_key("fire", [KEY_SPACE])
 	bind_key("pause_game", [KEY_P, KEY_ESCAPE])
 	bind_key("restart", [KEY_ENTER])
@@ -38,6 +43,8 @@ func _ready() -> void:
 	bind_pad_button("turn_right", [JOY_BUTTON_DPAD_RIGHT])
 	bind_pad_button("thrust", [JOY_BUTTON_A, JOY_BUTTON_DPAD_UP])
 	bind_pad_button("brake", [JOY_BUTTON_B, JOY_BUTTON_DPAD_DOWN])
+	bind_pad_button("special", [JOY_BUTTON_B])
+	bind_pad_button("fire_secondary", [JOY_BUTTON_LEFT_SHOULDER])
 	bind_pad_button("fire", [JOY_BUTTON_X, JOY_BUTTON_RIGHT_SHOULDER])
 	bind_pad_button("pause_game", [JOY_BUTTON_START])
 	bind_pad_button("restart", [JOY_BUTTON_Y])
@@ -85,10 +92,11 @@ func bind_pad_axis(action: String, axis: int, value: float) -> void:
 	InputMap.action_add_event(action, event)
 
 func reset() -> void:
-	for entity in enemies + shots + effects:
+	for entity in enemies + shots + rockets + effects:
 		entity.free()
 	enemies.clear()
 	shots.clear()
+	rockets.clear()
 	effects.clear()
 	arena.reset_flashes()
 	arena.reset_asteroids()
@@ -138,6 +146,8 @@ func _physics_process(delta: float) -> void:
 		for shot in ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation)):
 			spawn_shot(shot.position, shot.velocity, false, shot.damage, shot.max_range)
 			ship.fired_primary()
+	if Input.is_action_just_pressed("fire_secondary"):
+		fire_player_rocket()
 	for enemy in enemies:
 		if enemy.is_repair_bot:
 			enemy.step_support(delta, enemies, arena)
@@ -149,6 +159,7 @@ func _physics_process(delta: float) -> void:
 				enemy.fired()
 	resolve_collisions()
 	step_shots(delta)
+	step_rockets(delta)
 	# Weapon knockback and ramming can add impulses after ship.step.
 	ship.enforce_speed_limit()
 	if enemies.is_empty():
@@ -271,6 +282,106 @@ func step_shots(delta: float) -> void:
 		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= shot.max_range:
 			shot.begin_disintegrate()
 
+func fire_player_rocket() -> void:
+	var direction: Vector2 = Vector2.UP.rotated(ship.rotation)
+	var launch_point: Vector2 = ship.position + direction * ship.secondary.MUZZLE_OFFSET
+	# Do not consume scarce ammunition when the muzzle is already obstructed.
+	if arena.blocked(launch_point, Rocket.ROCKET_RADIUS):
+		return
+	var launch: Dictionary = ship.secondary.fire(ship.position, direction, ship.velocity)
+	if launch.is_empty():
+		return
+	var missile := Rocket.new()
+	missile.position = launch["position"]
+	missile.velocity = launch["velocity"]
+	missile.max_range = launch["max_range"]
+	missile.damage = launch["damage"]
+	missile.blast_radius = launch["blast_radius"]
+	missile.blast_impulse = launch["blast_impulse"]
+	missile.sync_visual_heading()
+	rockets.append(missile)
+	add_child(missile)
+	ship.fired_secondary()
+
+func detonate_rocket(rocket: Node2D) -> void:
+	var origin: Vector2 = rocket.position
+	var radius: float = rocket.blast_radius
+	var strength: float = rocket.blast_impulse
+	var damage: float = rocket.damage
+
+	# Radial shockwave: all teams, including the launching player, are hit.
+	# Ship invulnerability is honored, exactly as for any other damage source.
+	var ship_distance: float = origin.distance_to(ship.position)
+	if ship.visible and ship_distance < radius + Ship.COLLISION_RADIUS:
+		var falloff: float = clampf(1.0 - ship_distance / (radius + Ship.COLLISION_RADIUS), 0.0, 1.0)
+		var away: Vector2 = (ship.position - origin).normalized()
+		if away.is_zero_approx():
+			away = -rocket.velocity.normalized()
+			if away.is_zero_approx():
+				away = Vector2.UP
+		ship.velocity += away * strength * falloff
+		ship.hit(damage * falloff)
+
+	for index in range(enemies.size() - 1, -1, -1):
+		var enemy = enemies[index]
+		var distance: float = origin.distance_to(enemy.position)
+		if distance >= radius + enemy.COLLISION_RADIUS:
+			continue
+		var falloff: float = clampf(1.0 - distance / (radius + enemy.COLLISION_RADIUS), 0.0, 1.0)
+		var away: Vector2 = (enemy.position - origin).normalized()
+		if away.is_zero_approx():
+			away = -rocket.velocity.normalized()
+			if away.is_zero_approx():
+				away = Vector2.RIGHT
+		enemy.velocity += away * strength * falloff
+		var destroyed: bool = enemy.take_damage(damage * falloff)
+		notify_drones_of_hit(enemy)
+		if destroyed:
+			defeat_enemy(index)
+	arena.apply_blast(origin, strength * 2.5, radius)
+	var burst := Explosion.new()
+	burst.position = origin
+	burst.configure(radius)
+	effects.append(burst)
+	add_child(burst)
+	spawn_debris(origin, Color(1.0, 0.68, 0.24), 1.7, 18, 0.55)
+
+func step_rockets(delta: float) -> void:
+	for index in range(rockets.size() - 1, -1, -1):
+		var rocket = rockets[index]
+		rocket.lifetime -= delta
+		rocket.trail_time += delta
+		var detonate := rocket.lifetime <= 0.0 or rocket.bounces_left <= 0 or rocket.distance_travelled >= rocket.max_range
+		if not detonate:
+			# Sample in short increments so fast missiles cannot tunnel through
+			# a ship, a dense rock, or a narrow section of arena wall.
+			var substeps: int = maxi(1, int(ceil(rocket.velocity.length() * delta / 3.0)))
+			for substep in range(substeps):
+				arena.move_shot(rocket, delta / float(substeps))
+				if rocket.impact_pending:
+					detonate = true
+					break
+				if rocket.bounces_left <= 0 or rocket.distance_travelled >= rocket.max_range:
+					detonate = true
+					break
+				# Unlike the Pulse Laser, this rocket can strike its owner,
+				# including after a rebound or a low-speed shot.
+				if rocket.position.distance_to(ship.position) <= Ship.COLLISION_RADIUS + rocket.hit_radius and ship.visible:
+					detonate = true
+					break
+				for enemy in enemies:
+					if rocket.position.distance_to(enemy.position) <= enemy.COLLISION_RADIUS + rocket.hit_radius:
+						detonate = true
+						break
+				if detonate:
+					break
+		if detonate:
+			detonate_rocket(rocket)
+			rockets.remove_at(index)
+			rocket.queue_free()
+		else:
+			rocket.queue_redraw()
+
 func spawn_debris(at: Vector2, color: Color, strength: float = 1.0, amount: int = 8, lifespan: float = 0.42) -> void:
 	var effect := ImpactParticles.new()
 	effect.position = at
@@ -369,9 +480,11 @@ func _draw() -> void:
 func update_hud() -> void:
 	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HOSTILES %02d" % [score, wave, enemies.size()]
 	var thrust: int = roundi(Input.get_action_strength("thrust") * 100.0)
-	status_hud.text = "SPEED %5.0f u/s    THRUST %3d%%    HEALTH %.0f/%.0f    SHIELDS %.0f/%.0f    HEAT %3.0f%%\nPRIMARY: PULSE LASER  |  SECONDARY: NONE   AMMO: --   ABILITY COOLDOWN: --   P/ESC PAUSE" % [
-		ship.velocity.length(), thrust, ship.hull, ship.max_hull,
-		ship.shields, ship.max_shields, ship.heat / ship.MAX_HEAT * 100.0
+	var retro: int = roundi(maxf(Input.get_action_strength("special"), Input.get_action_strength("brake")) * 100.0)
+	status_hud.text = "SPEED %4.0f   THRUST %3d%%   RETRO %3d%%   HEALTH %.1f/%.0f   SHIELDS %.1f/%.0f   HEAT %3.0f%%\nPRIMARY: PULSE LASER   SECONDARY: ROCKETS %d/%d   READY IN %.1fs   SPECIAL: RETRO   Q/LB: ROCKET" % [
+		ship.velocity.length(), thrust, retro, ship.hull, ship.max_hull,
+		ship.shields, ship.max_shields, ship.heat / ship.MAX_HEAT * 100.0,
+		ship.secondary.ammo, ship.secondary.MAX_AMMO, ship.secondary.cooldown
 	]
 	if dying:
 		banner.text = ""
