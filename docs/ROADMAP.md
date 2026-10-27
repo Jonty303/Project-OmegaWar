@@ -4,12 +4,14 @@
 
 This **classic-baseline** branch is focused on game feel:
 - one arena and central obstruction, plus two heavy movable asteroids as cover;
-- slow acceleration and momentum without passive decay;
-- two to four Local Drones: limited-range 360-degree vision and turret fire,
-  stationary sentry behaviour, 250-unit detection / 200-unit weapon range,
-  and last-seen-position pursuit around obstacles;
-- one unarmed Repair Bot per wave with slow allied healing over an electric tether;
-- separate hull HP and shield HP, shield-first damage, on-damage mini-bars,
+- slow acceleration and momentum without passive decay, 98.5% wall/core
+  bounce restitution (but independent asteroid/ship impact physics);
+- two to four Local Drones: 90-unit omnidirectional vision and a 365-unit,
+  40-degree barrel-facing cone, 240-unit weapon reach, slow idle turret sweeps,
+  rare about-faces and last-sighting investigation followed by searching;
+- one unarmed Repair Bot per wave with global awareness of damaged allies,
+  faster movement and short-range electric repair tether;
+- separate hull HP and shield HP, shield-first damage, shield-above-hull mini-bars,
   and a compact bottom HUD for speed, thrust, health, shields, heat and
   placeholders for secondary ammunition and ability cooldown;
 - physical ship/enemy impacts with separation, impulses and temporary debris;
@@ -36,8 +38,8 @@ obstacles.
 ## Near-term acceptance targets
 
 1. The ship feels controllable and inertia is consistent at different frame rates.
-2. Local Drones remain stationary until sighting, hold position while firing,
-   and search along the last observed path without seeing through the core.
+2. Local Drones can be ambushed from behind, only see far in their turret cone,
+   and travel to a last sighting before stopping to scan for the player.
 3. Bullet ricochets behave predictably against every arena surface.
 4. Ramming enemies transfers momentum, emits debris, and can cause damage.
    Asteroid impacts never damage ships and persistent thrust slowly moves them.

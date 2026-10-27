@@ -23,21 +23,28 @@ after the last enemy dies**, with **two to four Local Drones and one Repair Bot*
 
 The ship accelerates gently and **never slows down by itself**: velocity is
 retained until you thrust in another direction, apply the brakes, or hit a
-solid object. The central core and arena walls reflect moving ships, with some
-energy lost on collision.
+solid object. Outer walls and the central core now retain **98.5% of the
+normal component of impact speed** on a bounce. Momentum exchange with
+other ships and heavy asteroids remains governed by their own collision rules.
 
 The initial enemy is the **Local Drone**, a slow, territorial sentry. It spawns
-at rest, watching in every direction within **250 world units**. The central
-core and asteroids block its line of sight. Once it sees the player, its visible gun turret
-(a bright clock hand extending from the drone's centre) turns independently
-up to **6 radians/second**. It shoots only if the player is visible, within
-the **200-unit weapon range**, and the turret is aligned. At a firing position
-it holds steady rather than constantly chasing.
+at rest and uses **two separate vision zones**: close-range 360-degree
+awareness within **90 units**, and a **365-unit forward view cone**, 40 degrees
+wide, aligned with its visible gun barrel. The central core and asteroids block
+both sensors. Its independent turret still rotates rapidly (6 radians/second)
+while tracking an acquired target. The gun can now reach **240 units** and only
+fires when the target is visible, in range and aligned.
 
-If the player leaves sight, the drone remembers their **last observed
-location and bearing**, moves slowly toward that location and continues a
-methodical search along the same bearing until it reacquires the player.
-It never fires at an invisible target or telepathically updates its target.
+When idle, the gun **slowly sweeps left and right** rather than pointing in
+a fixed direction. Roughly every 15–28 seconds the drone changes its watch
+direction by 180 degrees, with a visible turn rather than a snap. It stays
+in place when it has a firing solution.
+
+If it loses sight, the drone remembers the **last reported player location**
+and moves there without updating the destination from unseen player
+coordinates. Once it arrives, it **stops and looks around for six seconds**;
+if it fails to reacquire, it returns to idle sentry scanning. It never fires
+at an invisible target.
 Movement uses corner-aware pathfinding around the central obstruction.
 
 Shots from either side **ricochet off arena
@@ -66,9 +73,10 @@ fading fragments for 0.34 seconds rather than suddenly disappearing.
 ## Repair Bots, shield pools and status displays
 
 **Repair Bots** are the second enemy type. They have **no weapons**, six hull
-points, and a two-point shield. They float at about 42 units/second when
+points, and a two-point shield. They float at up to **88 units/second** when
 responding to an injured allied unit, or hold position when one is close enough
-to heal. A jagged **green electrical tether** joins a Repair Bot to the
+to heal. They can detect a wounded ally **anywhere in the arena**; only
+the green tether has limited range and requires clear line of sight. A jagged **green electrical tether** joins a Repair Bot to the
 damaged ally, only within 148 units and with clear line of sight. The tether
 restores **0.9 hull HP and 0.75 shield points per second**, up to the ally's
 normal maximum. The bot can repair other enemies (including allied Repair Bots),
@@ -81,8 +89,8 @@ accepts separate shield and hull multipliers, ready for later energy/kinetic
 weapon behaviours, but no weapon bypasses an active shield.
 
 **Miniature health and shield bars** appear above any player ship or enemy
-whose hull or shields are below full strength. Green shows hull HP, blue
-shows shields. Bars are omitted when both pools are full.
+whose hull or shields are below full strength. The **blue shield bar is above the green hull/health bar**, matching the
+shield-first damage order. Bars are omitted when both pools are full.
 
 A **compact bottom HUD** displays live movement speed (world units/second),
 thrust input percentage, hull HP, shield HP and weapon heat. Primary shots
@@ -120,7 +128,9 @@ godot --headless --path . --quit-after 600
 ```
 
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
-Local Drone detection range and rock/core occlusion, heavy asteroid impulses,
+Local Drone dual-zone vision, slow sweeping sentry turret and last-sighting
+investigation, stronger wall rebounds, shield-bar ordering, worldwide Repair
+Bot awareness and faster response, rock/core occlusion and heavy asteroid impulses,
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
 shield-first damage and healing, Repair Bot targeting and tether, mixed waves,
@@ -131,16 +141,22 @@ Manual playtest:
 - Thrust, release and coast; ensure no unexplained drift reduction.
 - Slow down by thrusting backwards or using brake, and bounce off a wall.
 - Watch a Local Drone stay where it spawns when you are far away.
-- Move into its 250-unit vision circle: watch the bright turret rotate like a
-  clock hand and fire only once it is facing you inside its shorter gun range.
+- Approach a Local Drone from behind at roughly 150 units: it should not see
+  you until its gun sweeps past or you get inside the 90-unit proximity radius.
+- Approach along the gun barrel from farther away: the 365-unit, 40-degree
+  forward cone should detect you, but its weapon only fires within 240 units.
+- Watch the idle gun sweep gradually and occasionally turn to check its rear.
 - Hide behind one of the two upper-right asteroids and verify the drone
   cannot spot or shoot through it; circle the asteroid to ambush the drone.
 - Crash into a rock: it should drift slowly, block your path without hurting
   the ship, and respond more strongly to sustained thrust.
 - Shoot a rock: shots should be absorbed into dust, not reflected.
-- Escape behind the core or outside vision: the drone should search your last
-  known direction, but stop shooting until it sees you again.
+- Escape behind the core or out of its sight: the drone should move to your
+  **last seen position**, stop to scan around, then resume idle behaviour if
+  it fails to reacquire.
 - Re-enter its range and verify it returns to a stationary firing position.
+- Bounce against outer walls and the core: you should keep nearly all
+  your speed. Other objects retain their existing impact physics.
 - Shoot both outer walls and the core; check ricochets, bullet heading,
   and that only the struck wall section flashes.
 - Let a bullet expire at the end of its range and watch its fading fragments.
@@ -150,8 +166,9 @@ Manual playtest:
   before the game-over message appears; restart with Enter or controller Y.
 - Shoot a shielded Repair Bot: its blue shield pool must reach zero before
   the green health pool is damaged. The shield/health mini-bars should appear.
-- Injure a Local Drone and watch a nearby Repair Bot connect its green
-  electrical tether and replenish health; check that it never heals the player.
+- Injure a Local Drone anywhere in the arena: a Repair Bot should notice
+  and travel toward it faster than before, then tether and heal when close.
+  Check that it never heals the player.
 - Check the bottom HUD updates with speed, thrust percentage, health,
   shields and heat. Secondary ammo/cooldown should explicitly say unavailable.
 - Destroy a drone and verify its debris burst.

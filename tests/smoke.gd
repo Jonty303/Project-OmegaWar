@@ -33,7 +33,10 @@ func run() -> void:
 	check(game.ship.heat > 0.0 and game.status_hud.text.contains("HEAT"), "Primary fire raises live heat readout")
 	game.ship.heat = 0.0
 	check(game.arena.segments.size() == 28, "Segmented outer walls and core")
-	check(game.Enemy.VISION_RANGE == 250.0 and game.Enemy.WEAPON_RANGE == 200.0, "Local Drone has reduced ambush-friendly ranges")
+	check(game.Enemy.SHORT_VISION_RANGE == 90.0 and game.Enemy.LONG_VISION_RANGE == 365.0, "Local Drone has near-360 and long forward sensors")
+	check(game.Enemy.WEAPON_RANGE == 240.0 and game.Enemy.FRONT_VISION_HALF_ANGLE <= deg_to_rad(25.0), "Long-range vision is a gun-aligned cone")
+	check(is_equal_approx(game.arena.WALL_RESTITUTION, 0.985), "Walls preserve 98.5 percent of impact speed")
+	check(game.StatusBars.SHIELD_BAR_Y_OFFSET < game.StatusBars.HEALTH_BAR_Y_OFFSET, "Shield bar is physically above hull health")
 	check(game.arena.asteroids.size() == 2, "Exactly two permanent asteroids")
 	check(game.arena.asteroids[0].mass > 15.0, "Asteroids are heavy")
 	check(game.arena.blocked(game.arena.asteroids[0].position, 5.0), "Asteroids are solid")
@@ -57,13 +60,18 @@ func run() -> void:
 	game.ship.position = Vector2(60, 200)
 	game.ship.velocity = Vector2(-160, 0)
 	game.ship.step(0.3, game.arena)
-	check(game.ship.velocity.x > 0.0, "Ship bounces from left wall")
+	check(game.ship.velocity.x > 150.0, "Ship retains almost all speed from outer-wall impact")
 	var lit := 0
 	for segment in game.arena.segments:
 		if float(segment["flash"]) > 0.0:
 			lit += 1
 	check(lit == 1, "Only the impacted wall section flashes")
 	check(game.effects.size() > 0, "Wall impact emits temporary debris")
+	game.ship.position = Vector2(450, 425)
+	game.ship.velocity = Vector2(160, 0)
+	game.ship.step(0.5, game.arena)
+	check(game.ship.velocity.x < -150.0, "Central core also preserves momentum")
+	# Rock collision restitution and other body impulse rules remain separate.
 
 	game.ship.position = Vector2(220, 425)
 	game.ship.velocity = Vector2.ZERO
@@ -130,6 +138,47 @@ func run() -> void:
 	game.ship.position = Vector2(220, 425)
 	game.ship.velocity = Vector2.ZERO
 
+	# Near-field detection is omnidirectional, but the long sensor is the gun's view.
+	var facing = game.Enemy.new()
+	facing.position = Vector2(250, 230)
+	facing.turret_angle = 0.0
+	game.add_child(facing)
+	facing.step(0.016, Vector2(560, 230), game.arena)
+	check(facing.can_see_player, "Long-range player directly ahead is spotted")
+	check(not facing.ready_to_fire(Vector2(560, 230), game.arena), "Long sensor does not increase weapon range")
+	var sideways = game.Enemy.new()
+	sideways.position = Vector2(250, 230)
+	sideways.turret_angle = 0.0
+	game.add_child(sideways)
+	sideways.step(0.016, Vector2(250, 420), game.arena)
+	check(not sideways.can_see_player, "Player outside gun cone remains hidden")
+	var rear = game.Enemy.new()
+	rear.position = Vector2(250, 230)
+	rear.turret_angle = 0.0
+	game.add_child(rear)
+	rear.step(0.016, Vector2(85, 230), game.arena)
+	check(not rear.can_see_player, "Can approach from behind outside near sensor")
+	rear.step(0.016, Vector2(190, 230), game.arena)
+	check(rear.can_see_player, "Close rear approach triggers 360-degree sensor")
+	facing.free()
+	sideways.free()
+	rear.free()
+
+	# Passive turret slowly scans its arc and occasionally checks behind.
+	var scanner = game.Enemy.new()
+	scanner.position = Vector2(250, 230)
+	scanner.turret_angle = 0.0
+	game.add_child(scanner)
+	scanner.step(1.0, Vector2(1000, 600), game.arena)
+	check(scanner.turret_angle > 0.10 and scanner.turret_angle < 0.81, "Idle gun sweeps slowly")
+	var old_anchor: float = scanner.scan_anchor
+	var old_aim: float = scanner.turret_angle
+	scanner.scan_turn_timer = 0.01
+	scanner.step(0.10, Vector2(1000, 600), game.arena)
+	check(absf(wrapf(scanner.scan_anchor - old_anchor, -PI, PI)) > 3.0, "Occasional about-face updates watch direction")
+	check(absf(wrapf(scanner.turret_angle - old_aim, -PI, PI)) <= scanner.IDLE_TURRET_RATE * 0.10 + 0.001, "About-face is an animated turret turn")
+	scanner.free()
+
 	# Local Drone: idle while unseen, detect in 360 degrees, respect range.
 	var sentry = game.Enemy.new()
 	sentry.position = Vector2(250, 230)
@@ -137,7 +186,7 @@ func run() -> void:
 	sentry.fire_timer = 0.0
 	sentry.step(0.1, Vector2(1020, 230), game.arena)
 	check(not sentry.spotted_once and sentry.velocity.is_zero_approx(), "Unalerted drone holds position")
-	var seen_at := Vector2(350, 230)
+	var seen_at := Vector2(315, 230)
 	sentry.step(0.1, seen_at, game.arena)
 	check(sentry.spotted_once and sentry.can_see_player, "Drone acquires 360 degree sight")
 	check(sentry.velocity.is_zero_approx(), "Sentry does not pursue a target already in firing range")
@@ -156,6 +205,18 @@ func run() -> void:
 	check(not sentry.can_see_player and sentry.velocity.x > 0.0, "Search moves toward last sighting")
 	check(sentry.last_seen_position.is_equal_approx(seen_at), "Lost drone remembers old position")
 	check(not sentry.ready_to_fire(Vector2(1020, 230), game.arena), "No shooting at unseen targets")
+	check(sentry.searching and sentry.search_goal.is_equal_approx(seen_at), "Investigates exactly the last sighting")
+	for search_frame in range(360):
+		sentry.step(1.0 / 60.0, Vector2(1020, 650), game.arena)
+		if sentry.looking_around:
+			break
+	check(sentry.looking_around and not sentry.searching, "At last sighting, drone stops to look around")
+	var hold_position: Vector2 = sentry.position
+	for search_frame in range(75):
+		sentry.step(1.0 / 60.0, Vector2(1020, 650), game.arena)
+	check(sentry.position.distance_to(hold_position) < 12.0, "Search stays near the last reported location")
+	sentry.step(6.1, Vector2(1020, 650), game.arena)
+	check(not sentry.looking_around and not sentry.spotted_once, "Drone eventually returns to idle scanning")
 
 	# Cross-core visibility check, despite the player being within sensor radius.
 	var hidden = game.Enemy.new()
@@ -186,6 +247,7 @@ func run() -> void:
 	var initial_health: float = patient.health
 	medic.step_support(0.5, allies, game.arena)
 	check(medic.is_repair_bot and not medic.has_method("ready_to_fire"), "Repair Bot carries no weapon")
+	check(medic.MOVE_SPEED >= 85.0 and medic.ACCELERATION >= 120.0, "Repair Bot responds faster")
 	check(medic.tether_target == patient, "Nearby ally receives electric repair tether")
 	check(patient.health > initial_health and patient.health <= patient.max_health, "Repair Bot restores allied hull")
 	check(medic.velocity.is_zero_approx(), "Repair Bot stays close while healing")
@@ -204,7 +266,8 @@ func run() -> void:
 	patient.position = Vector2(950, 245)
 	patient.health = 1.0
 	medic.step_support(0.25, allies, game.arena)
-	check(medic.tether_target == null and medic.velocity.length() > 0.0, "Repair Bot moves slowly toward distant ally")
+	check(medic.find_patient(allies) == patient, "Repair Bot detects injured allies anywhere on map")
+	check(medic.tether_target == null and medic.velocity.length() > 0.0, "Repair Bot moves toward a distant ally")
 	check(medic.velocity.length() <= medic.MOVE_SPEED + 0.01, "Repair Bot movement is methodical")
 	patient.free()
 	medic.free()
