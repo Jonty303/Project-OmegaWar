@@ -120,7 +120,13 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 	if should_move:
 		var waypoint: Vector2 = arena.approach_waypoint(position, destination, COLLISION_RADIUS)
 		if position.distance_to(waypoint) > 8.0:
-			desired_velocity = position.direction_to(waypoint) * TRAVEL_SPEED
+			var approach_speed := TRAVEL_SPEED
+			if searching:
+				# Decelerate before reaching the reported position instead of
+				# overshooting it and drifting away while looking around.
+				var runway := maxf(0.0, position.distance_to(search_goal) - SEARCH_ARRIVAL_RADIUS)
+				approach_speed = minf(TRAVEL_SPEED, sqrt(2.0 * ACCELERATION * runway))
+			desired_velocity = position.direction_to(waypoint) * approach_speed
 	velocity = velocity.move_toward(desired_velocity, ACCELERATION * delta)
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 
