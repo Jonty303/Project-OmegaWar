@@ -35,8 +35,8 @@ other ships and heavy asteroids remains governed by their own collision rules.
 
 The initial enemy is the **Local Drone**, a slow, territorial sentry. It spawns
 at rest and uses **two separate vision zones**: close-range 360-degree
-awareness within **90 units**, and a **400-unit forward view cone**, 50 degrees
-wide **(now 60 degrees, rather than 50)**, aligned with its visible gun barrel. The central core and asteroids block
+awareness within **90 units**, and a **400-unit forward view cone**, **60
+degrees wide**, aligned with its visible gun barrel. The central core and asteroids block
 both sensors. Its independently rotating turret now tracks at **7.5
 radians/second** when alerted or aiming at an acquired target. The gun can now reach **240 units** and only
 fires when the target is visible, in range and aligned.
