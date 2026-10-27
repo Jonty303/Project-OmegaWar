@@ -19,6 +19,16 @@ func run() -> void:
 
 	check(game.ship.hull == 3 and game.enemies.is_empty(), "Clean initial state")
 	check(game.arena.segments.size() == 28, "Segmented outer walls and core")
+	check(game.Enemy.VISION_RANGE == 250.0 and game.Enemy.WEAPON_RANGE == 200.0, "Local Drone has reduced ambush-friendly ranges")
+	check(game.arena.asteroids.size() == 2, "Exactly two permanent asteroids")
+	check(game.arena.asteroids[0].mass > 15.0, "Asteroids are heavy")
+	check(game.arena.blocked(game.arena.asteroids[0].position, 5.0), "Asteroids are solid")
+	check(not game.arena.has_line_of_sight(Vector2(800, 226), Vector2(1045, 226)), "Asteroid blocks line of sight inside vision range")
+	check(game.arena.has_line_of_sight(Vector2(785, 405), Vector2(1000, 405)), "Clear route still provides visibility")
+	var nav_goal := Vector2(1045, 226)
+	var nav_first: Vector2 = game.arena.approach_waypoint(Vector2(800, 226), nav_goal, game.Enemy.COLLISION_RADIUS)
+	check(nav_first != nav_goal and not game.arena.blocked(nav_first, game.Enemy.COLLISION_RADIUS), "Drones path around asteroid cover")
+
 	check(game.Ship.THRUST_ACCELERATION < 320.0, "Slow acceleration preserved")
 	check(game.ship.weapon.SHOT_SPEED < 650.0, "Slower projectiles preserved")
 
@@ -65,6 +75,47 @@ func run() -> void:
 	game.step_shots(0.4)
 	check(not game.shots.has(expired), "Shot removed after disintegration")
 
+	# Shots dissipate on asteroid contact, imparting only a small impulse.
+	var rock = game.arena.asteroids[0]
+	game.spawn_shot(Vector2(800, 226), Vector2(415, 0), false)
+	var rock_shot = game.shots[game.shots.size() - 1]
+	game.step_shots(0.25)
+	check(rock_shot.dissolving and rock_shot.bounces_left == 4, "Asteroid absorbs shot without ricochet")
+	check(rock.velocity.x > 0.0 and rock.velocity.length() < 10.0, "Shot lightly nudges heavy asteroid")
+	game.step_shots(0.4)
+	check(not game.shots.has(rock_shot), "Absorbed shot fades completely")
+
+	# Persistent player thrust moves the asteroid; it does not cause hull damage.
+	game.arena.reset_asteroids()
+	game.ship.position = Vector2(813, 226)
+	game.ship.velocity = Vector2(180, 0)
+	var hull_before: int = game.ship.hull
+	game.ship.step(0.55, game.arena)
+	check(game.ship.hull == hull_before, "Ramming an asteroid does not hurt ship")
+	check(rock.velocity.x > 0.0, "Ship contact transfers momentum into rock")
+	check(not game.arena.blocked(game.ship.position, game.Ship.COLLISION_RADIUS), "Ship remains outside rock")
+	game.arena.reset_asteroids()
+	game.ship.position = Vector2(874, 226)
+	game.ship.velocity = Vector2.ZERO
+	game.ship.rotation = PI / 2.0
+	Input.action_press("thrust")
+	for frame in range(180):
+		game.arena.advance_asteroids(1.0 / 60.0, [game.ship])
+		game.ship.step(1.0 / 60.0, game.arena)
+	Input.action_release("thrust")
+	check(rock.position.x > rock.starting_position.x + 2.0, "Repeated thrust slowly pushes heavy rock")
+	check(game.ship.hull == hull_before, "Sustained rock contact remains harmless")
+	var rock_speed: float = rock.velocity.length()
+	game.arena.apply_blast(rock.position + Vector2(-50, 0), 850.0, 180.0)
+	check(rock.velocity.length() > rock_speed, "Large explosion can give asteroid a stronger impulse")
+
+	# Rocks reset cleanly between lives.
+	game.arena.reset_asteroids()
+	check(rock.position == rock.starting_position and rock.velocity == Vector2.ZERO, "Restartable asteroid positions")
+	game.ship.rotation = 0.0
+	game.ship.position = Vector2(220, 425)
+	game.ship.velocity = Vector2.ZERO
+
 	# Local Drone: idle while unseen, detect in 360 degrees, respect range.
 	var sentry = game.Enemy.new()
 	sentry.position = Vector2(250, 230)
@@ -94,12 +145,18 @@ func run() -> void:
 
 	# Cross-core visibility check, despite the player being within sensor radius.
 	var hidden = game.Enemy.new()
-	hidden.position = Vector2(430, 425)
+	hidden.position = Vector2(465, 425)
 	game.add_child(hidden)
-	hidden.step(0.1, Vector2(780, 425), game.arena)
+	hidden.step(0.1, Vector2(715, 425), game.arena)
 	check(not hidden.spotted_once and not hidden.can_see_player, "Core blocks drone vision")
 	check(hidden.velocity.is_zero_approx(), "Unalerted drone ignores unseen players")
 	hidden.free()
+	var behind_rock = game.Enemy.new()
+	behind_rock.position = Vector2(800, 226)
+	game.add_child(behind_rock)
+	behind_rock.step(0.1, Vector2(1045, 226), game.arena)
+	check(not behind_rock.spotted_once and behind_rock.velocity.is_zero_approx(), "Asteroid allows Local Drone ambush")
+	behind_rock.free()
 	sentry.free()
 
 	# Integrate sentry fire through the main coordinator.
@@ -183,6 +240,7 @@ func run() -> void:
 
 	game.reset()
 	check(game.ship.visible and not game.game_over and not game.dying, "Restart restores player ship")
+	check(game.arena.asteroids[0].position == game.arena.asteroids[0].starting_position, "Restart puts asteroids back")
 	check(game.arena.segments.size() == 28 and game.effects.is_empty(), "Restart clears particle effects")
 	game.free()
 	await process_frame

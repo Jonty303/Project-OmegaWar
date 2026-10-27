@@ -3,13 +3,15 @@
 ## Current branch: intentionally simple
 
 This **classic-baseline** branch is focused on game feel:
-- one arena and central obstruction;
+- one arena and central obstruction, plus two heavy movable asteroids as cover;
 - slow acceleration and momentum without passive decay;
 - three to five Local Drones: limited-range 360-degree vision and turret fire,
-  stationary sentry behaviour, and last-seen-position pursuit around obstacles;
+  stationary sentry behaviour, 250-unit detection / 200-unit weapon range,
+  and last-seen-position pursuit around obstacles;
 - physical ship/enemy impacts with separation, impulses and temporary debris;
 - ship death explosions with a brief wreckage phase before game over;
-- projectiles that ricochet off walls and the core;
+- projectiles that ricochet off walls and the core, but disintegrate
+  against asteroids and apply a small kinetic push;
 - keyboard and controller inputs, pause, score and five-second wave restarts.
 
 There are intentionally **no power-ups, shields, boosts, gravity-well enemies,
@@ -33,6 +35,6 @@ obstacles.
 2. Local Drones remain stationary until sighting, hold position while firing,
    and search along the last observed path without seeing through the core.
 3. Bullet ricochets behave predictably against every arena surface.
-4. Ramming transfers momentum, visibly deforms hull outlines, and causes
-   damage at high closing speed, without sticky overlaps.
+4. Ramming enemies transfers momentum, emits debris, and can cause damage.
+   Asteroid impacts never damage ships and persistent thrust slowly moves them.
 5. Controller input, pause and wave timing are reliable.

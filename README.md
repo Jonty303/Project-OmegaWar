@@ -26,11 +26,11 @@ solid object. The central core and arena walls reflect moving ships, with some
 energy lost on collision.
 
 The initial enemy is the **Local Drone**, a slow, territorial sentry. It spawns
-at rest, watching in every direction within **350 world units**. The central
-core blocks its line of sight. Once it sees the player, its visible gun turret
+at rest, watching in every direction within **250 world units**. The central
+core and asteroids block its line of sight. Once it sees the player, its visible gun turret
 (a bright clock hand extending from the drone's centre) turns independently
 up to **6 radians/second**. It shoots only if the player is visible, within
-the **265-unit weapon range**, and the turret is aligned. At a firing position
+the **200-unit weapon range**, and the turret is aligned. At a firing position
 it holds steady rather than constantly chasing.
 
 If the player leaves sight, the drone remembers their **last observed
@@ -62,6 +62,24 @@ velocity, including immediately after ricochets. Bullets can travel up to
 When they reach a limit, they stop and disintegrate into short-lived,
 fading fragments for 0.34 seconds rather than suddenly disappearing.
 
+## Two heavy asteroids
+
+Two irregular, slate-coloured asteroids provide additional cover in the
+**upper-right corner** of the arena, near (924, 226) and (1038, 311).
+They are genuine physical and tactical obstacles:
+
+- Both block all-round Local Drone sensors and direct turret fire.
+- Player ships and drones cannot pass through them, but can steer around
+  them, and drone routefinding uses movable-asteroid waypoints.
+- They **never cause hull damage**, even during an impact.
+- Shots from either side **dissipate** on the surface rather than ricocheting,
+  leaving a short dusty impact burst. Each hit nudges the asteroid a little.
+- Repeated thrust into a rock can push it further, while large explosions
+  impart stronger impulses. Rock masses (24 and 19) and environmental
+  resistance give their movement a slow, heavy feel.
+- Their momentum dissipates gradually, unlike the player's inertial flight.
+  Rock positions reset when starting a new run.
+
 ## Test
 
 From the project root:
@@ -73,7 +91,8 @@ godot --headless --path . --quit-after 600
 ```
 
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
-Local Drone detection range and obstacle occlusion, stationary sentry behaviour,
+Local Drone detection range and rock/core occlusion, heavy asteroid impulses,
+shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
 body impulses, death explosions and debris particles, segmented wall flashes,
 bullet headings, range disintegration, controller pause and wave respawns.
@@ -82,8 +101,13 @@ Manual playtest:
 - Thrust, release and coast; ensure no unexplained drift reduction.
 - Slow down by thrusting backwards or using brake, and bounce off a wall.
 - Watch a Local Drone stay where it spawns when you are far away.
-- Move into its 350-unit vision circle: watch the bright turret rotate like a
+- Move into its 250-unit vision circle: watch the bright turret rotate like a
   clock hand and fire only once it is facing you inside its shorter gun range.
+- Hide behind one of the two upper-right asteroids and verify the drone
+  cannot spot or shoot through it; circle the asteroid to ambush the drone.
+- Crash into a rock: it should drift slowly, block your path without hurting
+  the ship, and respond more strongly to sustained thrust.
+- Shoot a rock: shots should be absorbed into dust, not reflected.
 - Escape behind the core or outside vision: the drone should search your last
   known direction, but stop shooting until it sees you again.
 - Re-enter its range and verify it returns to a stationary firing position.
