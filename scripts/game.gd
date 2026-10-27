@@ -4,11 +4,13 @@ const Arena = preload("res://scripts/arena.gd")
 const Ship = preload("res://scripts/ship.gd")
 const Enemy = preload("res://scripts/enemy.gd")
 const Projectile = preload("res://scripts/projectile.gd")
+const ImpactParticles = preload("res://scripts/impact_particles.gd")
 
 var arena := Arena.new()
 var ship: Node2D
 var enemies: Array[Node2D] = []
 var shots: Array[Node2D] = []
+var effects: Array[Node2D] = []
 var score := 0
 var wave := 0
 var wave_delay := 1.0
@@ -41,6 +43,7 @@ func _ready() -> void:
 	bind_pad_axis("brake", JOY_AXIS_LEFT_Y, 1.0)
 	bind_pad_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
 	add_child(arena)
+	arena.wall_bounced.connect(on_wall_bounced)
 	hud.position = Vector2(40, 20)
 	hud.add_theme_font_size_override("font_size", 20)
 	add_child(hud)
@@ -77,10 +80,12 @@ func bind_pad_axis(action: String, axis: int, value: float) -> void:
 	InputMap.action_add_event(action, event)
 
 func reset() -> void:
-	for entity in enemies + shots:
+	for entity in enemies + shots + effects:
 		entity.free()
 	enemies.clear()
 	shots.clear()
+	effects.clear()
+	arena.reset_flashes()
 	if is_instance_valid(ship):
 		ship.free()
 	ship = Ship.new()
@@ -108,6 +113,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if paused or game_over:
 		return
+	arena.advance_flashes(delta)
+	step_effects(delta)
 	ship.step(delta, arena)
 	if Input.is_action_pressed("fire"):
 		for shot in ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation), ship.velocity):
@@ -159,7 +166,8 @@ func resolve_collisions() -> void:
 		var impulse := (1.0 + RESTITUTION) * closing_speed / (1.0 / SHIP_MASS + 1.0 / ENEMY_MASS)
 		ship.velocity += normal * impulse / SHIP_MASS
 		enemy.velocity -= normal * impulse / ENEMY_MASS
-		ship.crunch = maxf(ship.crunch, clampf(closing_speed / 170.0, 0.15, 1.0))
+		var impact_point: Vector2 = (ship.position + enemy.position) * 0.5
+		spawn_debris(impact_point, Color(1.0, 0.8, 0.45), clampf(closing_speed / 120.0, 0.7, 1.6))
 		if enemy.impact(closing_speed):
 			defeat_enemy(i)
 		if closing_speed >= 90.0:
@@ -175,37 +183,61 @@ func defeat_enemy(index: int) -> void:
 func step_shots(delta: float) -> void:
 	for i in range(shots.size() - 1, -1, -1):
 		var shot = shots[i]
+		if shot.dissolving:
+			if shot.step_disintegration(delta):
+				shots.remove_at(i)
+				shot.queue_free()
+			continue
 		shot.lifetime -= delta
 		var steps := maxi(1, int(ceil(shot.velocity.length() * delta / 4.0)))
-		for substep in range(steps):
-			if shot.lifetime <= 0.0 or shot.bounces_left <= 0:
-				break
-			# Move in short segments to keep swept collisions and ricochets accurate.
-			arena.move_shot(shot, delta / steps)
-			if shot.hostile:
-				if shot.position.distance_to(ship.position) < Ship.COLLISION_RADIUS + Projectile.HIT_RADIUS:
-					ship.velocity += shot.velocity.normalized() * 24.0
-					ship.crunch = maxf(ship.crunch, 0.35)
-					ship.hit()
-					shot.lifetime = 0.0
+		var hit_target := false
+		if shot.lifetime > 0.0:
+			for substep in range(steps):
+				if shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
 					break
-			else:
-				for j in range(enemies.size() - 1, -1, -1):
-					var enemy = enemies[j]
-					if shot.position.distance_to(enemy.position) < Enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
-						enemy.velocity += shot.velocity.normalized() * 30.0
-						enemy.health -= 1
-						enemy.crunch = maxf(enemy.crunch, 0.65)
-						enemy.queue_redraw()
-						shot.lifetime = 0.0
-						if enemy.health <= 0:
-							defeat_enemy(j)
+				arena.move_shot(shot, delta / float(steps))
+				if shot.hostile:
+					if shot.position.distance_to(ship.position) < Ship.COLLISION_RADIUS + Projectile.HIT_RADIUS:
+						ship.velocity += shot.velocity.normalized() * 24.0
+						ship.hit()
+						spawn_debris(shot.position, Color(0.5, 1.0, 1.0), 0.75)
+						hit_target = true
 						break
-				if shot.lifetime <= 0.0:
-					break
-		if shot.lifetime <= 0.0 or shot.bounces_left <= 0:
+				else:
+					for j in range(enemies.size() - 1, -1, -1):
+						var enemy = enemies[j]
+						if shot.position.distance_to(enemy.position) < Enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
+							enemy.velocity += shot.velocity.normalized() * 30.0
+							enemy.health -= 1
+							spawn_debris(shot.position, Color(1.0, 0.5, 0.25), 0.8)
+							hit_target = true
+							if enemy.health <= 0:
+								defeat_enemy(j)
+							break
+					if hit_target:
+						break
+		if hit_target:
 			shots.remove_at(i)
 			shot.queue_free()
+		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
+			shot.begin_disintegrate()
+
+func spawn_debris(at: Vector2, color: Color, strength: float = 1.0) -> void:
+	var effect := ImpactParticles.new()
+	effect.position = at
+	effect.configure(color, 8, strength)
+	effects.append(effect)
+	add_child(effect)
+
+func on_wall_bounced(at: Vector2, speed: float) -> void:
+	spawn_debris(at, Color(0.55, 0.9, 1.0), clampf(speed / 170.0, 0.5, 1.6))
+
+func step_effects(delta: float) -> void:
+	for i in range(effects.size() - 1, -1, -1):
+		var effect = effects[i]
+		if effect.advance(delta):
+			effects.remove_at(i)
+			effect.queue_free()
 
 func spawn_shot(origin: Vector2, velocity: Vector2, hostile: bool) -> void:
 	if arena.blocked(origin, Projectile.HIT_RADIUS):
@@ -213,6 +245,7 @@ func spawn_shot(origin: Vector2, velocity: Vector2, hostile: bool) -> void:
 	var shot := Projectile.new()
 	shot.position = origin
 	shot.velocity = velocity
+	shot.sync_visual_heading()
 	shot.hostile = hostile
 	shots.append(shot)
 	add_child(shot)
