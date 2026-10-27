@@ -141,6 +141,12 @@ func move_shot(shot: Projectile, delta: float) -> void:
 			shot.position = proposed
 		shot.distance_travelled += starting_position.distance_to(shot.position)
 
+func has_line_of_sight(from: Vector2, to: Vector2) -> bool:
+	# Sensor and weapon checks use the same obstruction geometry as navigation.
+	if blocked(from) or blocked(to):
+		return false
+	return not segment_hits_rect(from, to, CORE.grow(1.0))
+
 func segment_hits_rect(from: Vector2, to: Vector2, rect: Rect2) -> bool:
 	# Rect2 has no intersects_segment() method in Godot 4.5.
 	if rect.has_point(from) or rect.has_point(to):
