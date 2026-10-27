@@ -7,6 +7,11 @@ const MAX_SHIELDS := 2.0
 const MOVE_SPEED := 105.0
 const ACCELERATION := 150.0
 const TETHER_RANGE := 170.0
+const THREAT_NOTICE_RANGE := 165.0
+const THREAT_CORRIDOR := 34.0
+const EVADE_SECONDS := 2.8
+const EVADE_SPEED := 132.0
+const EVADE_ALLY_SPACING := 48.0
 const HULL_REPAIR_RATE := 0.9
 const SHIELD_REPAIR_RATE := 0.75
 const DamageModel = preload("res://scripts/combat_health.gd")
@@ -22,6 +27,9 @@ var collision_cooldown := 0.0
 var tether_target: Node2D = null
 var assigned_patient: Node2D = null
 var tether_phase := 0.0
+var evade_remaining := 0.0
+var evade_ally: Node2D = null
+var incoming_direction := Vector2.RIGHT
 
 func needs_healing(ally: Node2D) -> bool:
 	return ally.health < ally.max_health - 0.001 or ally.shields < ally.max_shields - 0.001
@@ -49,12 +57,78 @@ func find_patient(allies: Array[Node2D]) -> Node2D:
 	assigned_patient = best
 	return best
 
+func choose_shelter_ally(allies: Array[Node2D]) -> Node2D:
+	var best: Node2D = null
+	var best_cost := INF
+	for ally in allies:
+		if ally == self or not is_instance_valid(ally) or ally.health <= 0.0 or ally.is_repair_bot:
+			continue
+		var displacement: Vector2 = ally.position - position
+		# Prefer nearby survivors in the direction AWAY from incoming fire,
+		# but accept a reachable fellow drone if that is the only option.
+		var cost: float = displacement.length() - displacement.dot(incoming_direction) * 0.55
+		if cost < best_cost:
+			best_cost = cost
+			best = ally
+	return best
+
+func alert_incoming_fire(direction: Vector2, allies: Array[Node2D]) -> bool:
+	if health <= 0.0:
+		return false
+	if not direction.is_zero_approx():
+		incoming_direction = direction.normalized()
+	evade_ally = choose_shelter_ally(allies)
+	if evade_ally == null:
+		return false
+	evade_remaining = EVADE_SECONDS
+	tether_target = null
+	queue_redraw()
+	return true
+
+func observe_incoming_shot(shot_position: Vector2, shot_velocity: Vector2, allies: Array[Node2D], arena: Node2D) -> bool:
+	if evade_remaining > 0.0 or shot_velocity.is_zero_approx():
+		return false
+	var displacement: Vector2 = position - shot_position
+	var distance: float = displacement.length()
+	if distance > THREAT_NOTICE_RANGE:
+		return false
+	var direction: Vector2 = shot_velocity.normalized()
+	var ahead: float = displacement.dot(direction)
+	if ahead < -COLLISION_RADIUS or ahead > THREAT_NOTICE_RANGE:
+		return false
+	var sideways: float = absf(displacement.cross(direction))
+	if sideways > THREAT_CORRIDOR or not arena.has_line_of_sight(shot_position, position):
+		return false
+	return alert_incoming_fire(direction, allies)
+
 func step_support(delta: float, allies: Array[Node2D], arena: Node2D) -> void:
 	collision_cooldown = maxf(0.0, collision_cooldown - delta)
 	tether_phase += delta * 23.0
 	tether_target = null
 	var destination_velocity := Vector2.ZERO
+	# Keep the patient's assignment even while fleeing; return to treatment
+	# when safe. Injured new arrivals cannot steal it.
 	var patient := find_patient(allies)
+	if evade_remaining > 0.0:
+		evade_remaining = maxf(0.0, evade_remaining - delta)
+		if not is_instance_valid(evade_ally) or not allies.has(evade_ally) or evade_ally.health <= 0.0:
+			evade_ally = choose_shelter_ally(allies)
+		if evade_ally != null:
+			var toward: Vector2 = evade_ally.position - position
+			var goal: Vector2 = evade_ally.position
+			if toward.length() > EVADE_ALLY_SPACING:
+				goal -= toward.normalized() * EVADE_ALLY_SPACING
+				var waypoint: Vector2 = arena.approach_waypoint(position, goal, COLLISION_RADIUS)
+				if position.distance_to(waypoint) > 8.0:
+					destination_velocity = position.direction_to(waypoint) * EVADE_SPEED
+		else:
+			evade_remaining = 0.0
+		# Do not heal while actively evading incoming fire.
+		if evade_remaining > 0.0:
+			velocity = velocity.move_toward(destination_velocity, ACCELERATION * delta)
+			velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
+			queue_redraw()
+			return
 	if patient != null:
 		var distance := position.distance_to(patient.position)
 		if distance <= TETHER_RANGE and arena.has_line_of_sight(position, patient.position):
