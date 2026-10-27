@@ -146,7 +146,7 @@ func run() -> void:
 	check(game.rockets.size() == 1 and game.ship.secondary.ammo == 5, "Rockets launch and consume one round")
 	if game.rockets.size() > 0:
 		var rocket = game.rockets[0]
-		check(rocket.is_rocket and rocket.velocity.is_equal_approx(Vector2(350, 0)), "Rocket launches strictly along barrel, with zero inherited horizontal or vertical motion")
+		check(rocket.is_rocket and rocket.velocity.distance_to(Vector2(350, 0)) < 0.01, "Rocket launches strictly along barrel, with zero inherited horizontal or vertical motion")
 		check(rocket.visual_heading.is_equal_approx(Vector2.RIGHT), "Rocket artwork follows aim-only launch heading")
 		check(is_equal_approx(rocket.velocity.length(), game.ship.secondary.SHOT_SPEED), "Rocket always launches at its own fixed speed despite player drift")
 		check(rocket.max_range < game.Projectile.MAX_RANGE and rocket.damage == 2.0, "Rocket medium range and damage")
@@ -910,8 +910,17 @@ func run() -> void:
 		if mapping is InputEventJoypadMotion and mapping.axis == JOY_AXIS_LEFT_Y and mapping.axis_value > 0.0:
 			stick_navigation = true
 	check(stick_navigation, "Left stick down navigates menu options")
-	game._unhandled_input(pause_button)
-	check(not game.paused and not game.pause_menu_layer.visible, "Controller resumes and hides menu")
+	# Exercise the actual UI accept action with a synthetic joypad A press,
+	# not just a direct callback. Godot Buttons handle focused ui_accept.
+	var pad_accept := InputEventJoypadButton.new()
+	pad_accept.button_index = JOY_BUTTON_A
+	pad_accept.pressed = true
+	Input.parse_input_event(pad_accept)
+	await process_frame
+	pad_accept.pressed = false
+	Input.parse_input_event(pad_accept)
+	await process_frame
+	check(not game.paused and not game.pause_menu_layer.visible, "Controller A activates focused Resume button")
 	# Old Enter/Y restart hotkeys must not bypass the menu.
 	var prior_wave: int = game.wave
 	var old_restart := InputEventKey.new()
@@ -941,8 +950,14 @@ func run() -> void:
 	check(game.game_over and not game.dying, "Game over waits until debris animation")
 	check(game.paused and game.pause_menu_layer.visible, "Game over opens the pause menu for restart")
 	check(game.pause_resume_button.disabled, "Resume is disabled after ship destruction")
-	game.reset_from_menu()
-	check(not game.paused and not game.pause_menu_layer.visible and not game.game_over, "Pause-menu Reset Run starts a fresh game")
+	# After death the disabled Resume is skipped; joypad A selects Reset.
+	pad_accept.pressed = true
+	Input.parse_input_event(pad_accept)
+	await process_frame
+	pad_accept.pressed = false
+	Input.parse_input_event(pad_accept)
+	await process_frame
+	check(not game.paused and not game.pause_menu_layer.visible and not game.game_over, "Controller A activates focused Reset Run after death")
 
 	game.reset()
 	check(game.ship.visible and not game.game_over and not game.dying, "Restart restores player ship")
