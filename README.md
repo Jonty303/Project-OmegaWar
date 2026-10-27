@@ -6,7 +6,7 @@ rapid-fire modifiers and gravity wells to focus on movement and combat feel.
 
 ## Getting started
 
-Open \`project.godot\` in Godot 4.5.2 and press **F5**. The ship starts with
+Open `project.godot` in Godot 4.5.2 and press **F5**. The ship starts with
 three hull points and two seconds of spawn protection. A first wave appears
 after one second; subsequent waves appear **five seconds after the last enemy
 dies**, with three to five ordinary drones chosen each time.
@@ -38,11 +38,11 @@ can cause damage. Three hull points lost ends the run.
 
 From the project root:
 
-\`\`\`sh
+```sh
 godot --headless --path . --editor --quit
 godot --headless --path . --script tests/smoke.gd
 godot --headless --path . --quit-after 600
-\`\`\`
+```
 
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
 AI navigation around the central obstruction, body impulse and deformation,
@@ -57,5 +57,5 @@ Manual playtest:
 - Clear a wave, pause during the countdown, then watch 3–5 drones return.
 
 All visuals are procedural line art; no external sprites or plugins are needed.
-There is no audio, settings or save system yet. \`docs/ROADMAP.md\` retains the
+There is no audio, settings or save system yet. `docs/ROADMAP.md` retains the
 longer-term weapon and arena ideas for later, once this baseline feels right.
