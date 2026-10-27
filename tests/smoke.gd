@@ -27,7 +27,7 @@ func run() -> void:
 	var cannot_bypass: Vector2 = DamageModel.apply(3.0, 2.0, 1.0, 0.0, 1.0)
 	check(cannot_bypass.is_equal_approx(Vector2(3.0, 2.0)), "Hull always protected by active shields")
 	check(game.status_hud.text.contains("SPEED") and game.status_hud.text.contains("THRUST") and game.status_hud.text.contains("HEAT"), "Bottom HUD shows motion and heat")
-	check(game.status_hud.text.contains("SECONDARY: NONE") and game.status_hud.text.contains("COOLDOWN"), "HUD distinguishes unavailable secondary and cooldown")
+	check(game.status_hud.text.contains("SECONDARY: ROCKETS 6/6") and game.status_hud.text.contains("READY IN"), "HUD tracks secondary ammunition and cooldown")
 	game.ship.fired_primary()
 	game.update_hud()
 	check(game.ship.heat > 0.0 and game.status_hud.text.contains("HEAT"), "Primary fire raises live heat readout")
@@ -193,7 +193,7 @@ func run() -> void:
 	game.ship.velocity = Vector2.ZERO
 	var near_enemy = game.Enemy.new()
 	near_enemy.position = Vector2(370, 230)
-	near_enemy.health = 2.0
+	near_enemy.health = 1.0
 	var far_enemy = game.Enemy.new()
 	far_enemy.position = Vector2(425, 230)
 	far_enemy.health = 2.0
@@ -222,7 +222,7 @@ func run() -> void:
 	game.ship.hull = 3.0
 	game.ship.invulnerable = 0.0
 	var own_rocket = game.Rocket.new()
-	own_rocket.position = Vector2(238, 580)
+	own_rocket.position = Vector2(230, 580)
 	own_rocket.velocity = Vector2(350, 0)
 	game.add_child(own_rocket)
 	game.rockets.append(own_rocket)
