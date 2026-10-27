@@ -910,16 +910,22 @@ func run() -> void:
 		if mapping is InputEventJoypadMotion and mapping.axis == JOY_AXIS_LEFT_Y and mapping.axis_value > 0.0:
 			stick_navigation = true
 	check(stick_navigation, "Left stick down navigates menu options")
-	# Exercise the actual UI accept action with a synthetic joypad A press,
-	# not just a direct callback. Godot Buttons handle focused ui_accept.
+	# Deliver synthetic joypad events to the game's early input handler.
+	# In play, Godot forwards the same controller events to _input.
+	var dpad_down := InputEventJoypadButton.new()
+	dpad_down.button_index = JOY_BUTTON_DPAD_DOWN
+	dpad_down.pressed = true
+	game._input(dpad_down)
+	check(game.pause_reset_button.has_focus(), "D-pad DOWN focuses Reset Run")
+	var dpad_up := InputEventJoypadButton.new()
+	dpad_up.button_index = JOY_BUTTON_DPAD_UP
+	dpad_up.pressed = true
+	game._input(dpad_up)
+	check(game.pause_resume_button.has_focus(), "D-pad UP focuses Resume")
 	var pad_accept := InputEventJoypadButton.new()
 	pad_accept.button_index = JOY_BUTTON_A
 	pad_accept.pressed = true
-	Input.parse_input_event(pad_accept)
-	await process_frame
-	pad_accept.pressed = false
-	Input.parse_input_event(pad_accept)
-	await process_frame
+	game._input(pad_accept)
 	check(not game.paused and not game.pause_menu_layer.visible, "Controller A activates focused Resume button")
 	# Old Enter/Y restart hotkeys must not bypass the menu.
 	var prior_wave: int = game.wave
@@ -951,12 +957,7 @@ func run() -> void:
 	check(game.paused and game.pause_menu_layer.visible, "Game over opens the pause menu for restart")
 	check(game.pause_resume_button.disabled, "Resume is disabled after ship destruction")
 	# After death the disabled Resume is skipped; joypad A selects Reset.
-	pad_accept.pressed = true
-	Input.parse_input_event(pad_accept)
-	await process_frame
-	pad_accept.pressed = false
-	Input.parse_input_event(pad_accept)
-	await process_frame
+	game._input(pad_accept)
 	check(not game.paused and not game.pause_menu_layer.visible and not game.game_over, "Controller A activates focused Reset Run after death")
 
 	game.reset()
