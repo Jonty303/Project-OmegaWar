@@ -10,8 +10,9 @@ static func draw_for(actor: CanvasItem, hull: float, max_hull: float, shields: f
 	var hp_ratio := clampf(hull / maxf(max_hull, 0.001), 0.0, 1.0)
 	var shield_ratio := clampf(shields / maxf(max_shields, 0.001), 0.0, 1.0)
 	actor.draw_rect(Rect2(left - 1.0, y - 1.0, width + 2.0, 11.0), Color(0.02, 0.05, 0.08, 0.82), true)
-	actor.draw_rect(Rect2(left, y, width, 3.0), Color(0.17, 0.21, 0.22), true)
-	actor.draw_rect(Rect2(left, y, width * hp_ratio, 3.0), Color(0.43, 0.95, 0.47), true)
-	actor.draw_rect(Rect2(left, y + 5.0, width, 3.0), Color(0.11, 0.18, 0.23), true)
+	# Blue shield track is on TOP: visually depleted before green hull.
+	actor.draw_rect(Rect2(left, y, width, 3.0), Color(0.11, 0.18, 0.23), true)
 	if max_shields > 0.0:
-		actor.draw_rect(Rect2(left, y + 5.0, width * shield_ratio, 3.0), Color(0.28, 0.69, 1.0), true)
+		actor.draw_rect(Rect2(left, y, width * shield_ratio, 3.0), Color(0.28, 0.69, 1.0), true)
+	actor.draw_rect(Rect2(left, y + 5.0, width, 3.0), Color(0.17, 0.21, 0.22), true)
+	actor.draw_rect(Rect2(left, y + 5.0, width * hp_ratio, 3.0), Color(0.43, 0.95, 0.47), true)

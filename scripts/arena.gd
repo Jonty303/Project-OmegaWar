@@ -6,6 +6,7 @@ const Asteroid = preload("res://scripts/asteroid.gd")
 const BOUNDS := Rect2(40, 110, 1120, 630)
 const CORE := Rect2(490, 330, 220, 190)
 const FLASH_SECONDS := 0.26
+const WALL_RESTITUTION := 0.985
 
 signal wall_bounced(at: Vector2, speed: float)
 signal asteroid_struck(at: Vector2, power: float)
@@ -208,7 +209,7 @@ func move_body(body: Node2D, velocity: Vector2, radius: float, delta: float) -> 
 		var next := body.position + Vector2(velocity.x * delta / steps, 0)
 		if blocked_static(next, radius):
 			register_bounce(next, radius, true, velocity.x, absf(velocity.x), true)
-			velocity.x *= -0.7
+			velocity.x *= -WALL_RESTITUTION
 		elif asteroid_at(next, radius) != null:
 			velocity = asteroid_body_impact(next, velocity, radius)
 		else:
@@ -216,7 +217,7 @@ func move_body(body: Node2D, velocity: Vector2, radius: float, delta: float) -> 
 		next = body.position + Vector2(0, velocity.y * delta / steps)
 		if blocked_static(next, radius):
 			register_bounce(next, radius, false, velocity.y, absf(velocity.y), true)
-			velocity.y *= -0.7
+			velocity.y *= -WALL_RESTITUTION
 		elif asteroid_at(next, radius) != null:
 			velocity = asteroid_body_impact(next, velocity, radius)
 		else:

@@ -4,8 +4,8 @@ extends Node2D
 const COLLISION_RADIUS := 16.0
 const MAX_HEALTH := 6.0
 const MAX_SHIELDS := 2.0
-const MOVE_SPEED := 42.0
-const ACCELERATION := 55.0
+const MOVE_SPEED := 88.0
+const ACCELERATION := 130.0
 const TETHER_RANGE := 148.0
 const HULL_REPAIR_RATE := 0.9
 const SHIELD_REPAIR_RATE := 0.75
@@ -24,6 +24,7 @@ var tether_phase := 0.0
 func needs_healing(ally: Node2D) -> bool:
 	return ally.health < ally.max_health - 0.001 or ally.shields < ally.max_shields - 0.001
 
+# Full-map allied distress awareness; repair range itself is still limited.
 func find_patient(allies: Array[Node2D]) -> Node2D:
 	var best: Node2D = null
 	var nearest := INF
