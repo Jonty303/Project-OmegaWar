@@ -3,6 +3,8 @@ extends Node2D
 const Arena = preload("res://scripts/arena.gd")
 const Ship = preload("res://scripts/ship.gd")
 const Enemy = preload("res://scripts/enemy.gd")
+const LongRangeDrone = preload("res://scripts/long_range_drone.gd")
+const HomingMissile = preload("res://scripts/homing_missile.gd")
 const RepairBot = preload("res://scripts/repair_bot.gd")
 const StatusBars = preload("res://scripts/status_bars.gd")
 const Projectile = preload("res://scripts/projectile.gd")
@@ -15,6 +17,7 @@ var ship: Node2D
 var enemies: Array[Node2D] = []
 var shots: Array[Node2D] = []
 var rockets: Array[Node2D] = []
+var homing_missiles: Array[Node2D] = []
 var effects: Array[Node2D] = []
 var score := 0
 var wave := 0
@@ -28,6 +31,10 @@ const DEATH_EXPLOSION_TIME := 0.90
 var hud := Label.new()
 var banner := Label.new()
 var status_hud := Label.new()
+var pause_menu_layer := CanvasLayer.new()
+var pause_menu_title := Label.new()
+var pause_resume_button := Button.new()
+var pause_reset_button := Button.new()
 
 func _ready() -> void:
 	bind_key("turn_left", [KEY_A, KEY_LEFT])
@@ -38,7 +45,7 @@ func _ready() -> void:
 	bind_key("fire_secondary", [KEY_Q])
 	bind_key("fire", [KEY_SPACE])
 	bind_key("pause_game", [KEY_P, KEY_ESCAPE])
-	bind_key("restart", [KEY_ENTER])
+	# Reset is intentionally available only as a button in the pause menu.
 	bind_pad_button("turn_left", [JOY_BUTTON_DPAD_LEFT])
 	bind_pad_button("turn_right", [JOY_BUTTON_DPAD_RIGHT])
 	bind_pad_button("thrust", [JOY_BUTTON_A, JOY_BUTTON_DPAD_UP])
@@ -47,7 +54,7 @@ func _ready() -> void:
 	bind_pad_button("fire_secondary", [JOY_BUTTON_LEFT_SHOULDER])
 	bind_pad_button("fire", [JOY_BUTTON_X, JOY_BUTTON_RIGHT_SHOULDER])
 	bind_pad_button("pause_game", [JOY_BUTTON_START])
-	bind_pad_button("restart", [JOY_BUTTON_Y])
+	# Do not bind Y to global reset; accidental mid-run resets are disabled.
 	bind_pad_axis("turn_left", JOY_AXIS_LEFT_X, -1.0)
 	bind_pad_axis("turn_right", JOY_AXIS_LEFT_X, 1.0)
 	bind_pad_axis("turn_left", JOY_AXIS_RIGHT_X, -1.0)
@@ -67,7 +74,62 @@ func _ready() -> void:
 	status_hud.position = Vector2(34, 752)
 	status_hud.add_theme_font_size_override("font_size", 16)
 	add_child(status_hud)
+	setup_pause_menu()
 	reset()
+
+func setup_pause_menu() -> void:
+	pause_menu_layer.layer = 10
+	add_child(pause_menu_layer)
+	var backdrop := ColorRect.new()
+	backdrop.color = Color(0.01, 0.02, 0.05, 0.79)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	pause_menu_layer.add_child(backdrop)
+
+	var centre := CenterContainer.new()
+	centre.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_child(centre)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(350, 190)
+	centre.add_child(panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 15)
+	panel.add_child(stack)
+	pause_menu_title.text = "PAUSED"
+	pause_menu_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pause_menu_title.add_theme_font_size_override("font_size", 25)
+	stack.add_child(pause_menu_title)
+	pause_resume_button.text = "RESUME"
+	pause_resume_button.custom_minimum_size = Vector2(300, 45)
+	pause_resume_button.focus_mode = Control.FOCUS_ALL
+	pause_resume_button.pressed.connect(resume_from_menu)
+	stack.add_child(pause_resume_button)
+	pause_reset_button.text = "RESET RUN"
+	pause_reset_button.custom_minimum_size = Vector2(300, 45)
+	pause_reset_button.focus_mode = Control.FOCUS_ALL
+	pause_reset_button.pressed.connect(reset_from_menu)
+	stack.add_child(pause_reset_button)
+	pause_menu_layer.visible = false
+
+func set_paused(value: bool) -> void:
+	paused = value
+	pause_menu_layer.visible = value
+	if value:
+		pause_menu_title.text = "SHIP LOST" if game_over else "PAUSED"
+		pause_resume_button.disabled = game_over
+		if game_over:
+			pause_reset_button.grab_focus()
+		else:
+			pause_resume_button.grab_focus()
+	update_hud()
+
+func resume_from_menu() -> void:
+	if paused and not game_over:
+		set_paused(false)
+
+func reset_from_menu() -> void:
+	if paused:
+		reset()
 
 func bind_key(action: String, keys: Array) -> void:
 	if InputMap.has_action(action):
@@ -92,11 +154,12 @@ func bind_pad_axis(action: String, axis: int, value: float) -> void:
 	InputMap.action_add_event(action, event)
 
 func reset() -> void:
-	for entity in enemies + shots + rockets + effects:
+	for entity in enemies + shots + rockets + homing_missiles + effects:
 		entity.free()
 	enemies.clear()
 	shots.clear()
 	rockets.clear()
+	homing_missiles.clear()
 	effects.clear()
 	arena.reset_flashes()
 	arena.reset_asteroids()
@@ -113,17 +176,17 @@ func reset() -> void:
 	game_over = false
 	dying = false
 	death_timer = 0.0
+	pause_menu_layer.visible = false
 	update_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_echo():
 		return
-	if event.is_action_pressed("restart"):
-		reset()
-		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("pause_game") and not game_over:
-		paused = not paused
-		update_hud()
+	if event.is_action_pressed("pause_game"):
+		# The pause overlay owns Reset. After death it remains open until
+		# the user explicitly chooses Reset Run.
+		if not game_over or not paused:
+			set_paused(not paused)
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
@@ -139,6 +202,7 @@ func _physics_process(delta: float) -> void:
 		if death_timer <= 0.0:
 			dying = false
 			game_over = true
+			set_paused(true)
 		update_hud()
 		return
 	ship.step(delta, arena)
@@ -153,13 +217,16 @@ func _physics_process(delta: float) -> void:
 			enemy.step_support(delta, enemies, arena)
 		else:
 			enemy.step(delta, ship.position, arena)
-			# Only Local Drones have weapons. Their turret must be lined up.
 			if enemy.ready_to_fire(ship.position, arena):
-				spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * 225.0, true)
+				if enemy.is_missile_drone:
+					launch_enemy_homing_missile(enemy)
+				else:
+					spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * 225.0, true)
 				enemy.fired()
 	resolve_collisions()
 	step_shots(delta)
 	step_rockets(delta)
+	step_homing_missiles(delta)
 	# Weapon knockback and ramming can add impulses after ship.step.
 	ship.enforce_speed_limit()
 	if enemies.is_empty():
@@ -200,7 +267,7 @@ func resolve_collisions() -> void:
 		var correction := normal * ((minimum - distance) * 0.5 + 0.1)
 		if not arena.blocked(ship.position + correction, Ship.COLLISION_RADIUS):
 			ship.position += correction
-		if not arena.blocked(enemy.position - correction, Enemy.COLLISION_RADIUS):
+		if not arena.blocked(enemy.position - correction, enemy.COLLISION_RADIUS):
 			enemy.position -= correction
 		var closing_speed := maxf(0.0, -(ship.velocity - enemy.velocity).dot(normal))
 		if closing_speed <= 0.0:
@@ -232,10 +299,10 @@ func notify_drones_of_hit(victim: Node2D, incoming_velocity: Vector2 = Vector2.Z
 
 func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
-	var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else Color(1.0, 0.5, 0.25)
+	var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else (Color(0.48, 0.66, 1.0) if enemy.is_missile_drone else Color(1.0, 0.5, 0.25))
 	spawn_debris(enemy.position, tint, 1.4, 16, 0.62)
 	arena.apply_blast(enemy.position, 320.0, 100.0)
-	score += 200 if enemy.is_repair_bot else 100
+	score += 200 if enemy.is_repair_bot else (150 if enemy.is_missile_drone else 100)
 	enemies.remove_at(index)
 	enemy.queue_free()
 
@@ -271,7 +338,7 @@ func step_shots(delta: float) -> void:
 							enemy.velocity += shot.velocity.normalized() * 30.0
 							var destroyed: bool = enemy.take_damage(shot.damage)
 							notify_drones_of_hit(enemy, shot.velocity)
-							var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else Color(1.0, 0.5, 0.25)
+							var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else (Color(0.48, 0.66, 1.0) if enemy.is_missile_drone else Color(1.0, 0.5, 0.25))
 							spawn_debris(shot.position, tint, 0.8)
 							hit_target = true
 							if destroyed:
@@ -284,6 +351,55 @@ func step_shots(delta: float) -> void:
 			shot.queue_free()
 		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= shot.max_range:
 			shot.begin_disintegrate()
+
+func launch_enemy_homing_missile(enemy: Node2D) -> void:
+	var origin: Vector2 = enemy.muzzle_position()
+	if arena.blocked(origin, HomingMissile.RADIUS):
+		return
+	var missile := HomingMissile.new()
+	missile.position = origin
+	missile.velocity = enemy.turret_direction() * HomingMissile.SPEED
+	missile.sync_visual_heading()
+	homing_missiles.append(missile)
+	add_child(missile)
+
+func step_homing_missiles(delta: float) -> void:
+	for index in range(homing_missiles.size() - 1, -1, -1):
+		var missile = homing_missiles[index]
+		missile.lifetime -= delta
+		missile.trail_time += delta
+		var detonate: bool = missile.lifetime <= 0.0 or missile.distance_travelled >= missile.max_range
+		if not detonate:
+			if ship.visible:
+				missile.steer(delta, ship.position)
+			var substeps: int = maxi(1, int(ceil(missile.velocity.length() * delta / 3.0)))
+			for substep in range(substeps):
+				var next: Vector2 = missile.position + missile.velocity * (delta / float(substeps))
+				# Missiles NEVER bounce: both the core and exterior walls
+				# count as barriers that trigger an immediate explosion.
+				if arena.blocked_static(next, missile.hit_radius) or arena.asteroid_at(next, missile.hit_radius) != null:
+					detonate = true
+					break
+				missile.distance_travelled += missile.position.distance_to(next)
+				missile.position = next
+				if missile.distance_travelled >= missile.max_range:
+					detonate = true
+					break
+				if ship.visible and missile.position.distance_to(ship.position) <= Ship.COLLISION_RADIUS + missile.hit_radius:
+					detonate = true
+					break
+				for enemy in enemies:
+					if missile.position.distance_to(enemy.position) <= enemy.COLLISION_RADIUS + missile.hit_radius:
+						detonate = true
+						break
+				if detonate:
+					break
+		if detonate:
+			detonate_rocket(missile)
+			homing_missiles.remove_at(index)
+			missile.queue_free()
+		else:
+			missile.queue_redraw()
 
 func fire_player_rocket() -> void:
 	var direction: Vector2 = Vector2.UP.rotated(ship.rotation)
@@ -438,14 +554,21 @@ func start_wave() -> void:
 	wave += 1
 	waiting_for_wave = false
 	wave_delay = 0.0
-	# Small mixed wave: two to four sentries supported by one Repair Bot.
-	for i in range(randi_range(2, 4)):
+	# Early mixed waves: two to three sentries, one long-range missile
+	# variant and one support bot. Preserve the original 3-5 hostiles.
+	for i in range(randi_range(2, 3)):
 		var enemy := Enemy.new()
 		enemy.position = safe_position()
 		enemy.fire_timer = randf_range(1.5, 3.0)
 		enemy.turret_angle = randf_range(-PI, PI)
 		enemies.append(enemy)
 		add_child(enemy)
+
+	var standoff := LongRangeDrone.new()
+	standoff.position = safe_position(LongRangeDrone.COLLISION_RADIUS)
+	standoff.turret_angle = randf_range(-PI, PI)
+	enemies.append(standoff)
+	add_child(standoff)
 
 	var bot := RepairBot.new()
 	# Try to place support within reasonable distance of a drone.
@@ -489,12 +612,8 @@ func update_hud() -> void:
 		ship.shields, ship.max_shields, ship.heat / ship.MAX_HEAT * 100.0,
 		ship.secondary.ammo, ship.secondary.MAX_AMMO, ship.secondary.cooldown
 	]
-	if dying:
+	if dying or paused or game_over:
 		banner.text = ""
-	elif game_over:
-		banner.text = "SHIP LOST / ENTER OR Y TO RESTART"
-	elif paused:
-		banner.text = "PAUSED / P, ESC OR START TO RESUME"
 	elif waiting_for_wave and wave > 0:
 		banner.text = "ARENA CLEAR / NEXT WAVE IN %.1f" % maxf(0.0, wave_delay)
 	else:
