@@ -14,7 +14,8 @@ const LOOK_AROUND_SECONDS := 6.0
 const SEARCH_ARRIVAL_RADIUS := 17.0
 const TRAVEL_SPEED := 54.0
 const ACCELERATION := 75.0
-const TURRET_TURN_RATE := 6.0
+const TURRET_TURN_RATE := 7.5
+const SHOT_INVESTIGATION_RANGE := 260.0
 const AIM_TOLERANCE := 0.12
 const FIRE_INTERVAL := 2.1
 const MUZZLE_DISTANCE := 19.0
@@ -66,6 +67,42 @@ func alert_to_ally_hit(hit_position: Vector2, arena: Node2D, hit_self: bool = fa
 		search_heading = Vector2.from_angle(turret_angle)
 	queue_redraw()
 	return true
+
+func react_to_incoming_shot(incoming_velocity: Vector2, arena: Node2D) -> void:
+	# The projectile's incoming velocity identifies a DIRECTION only, never
+	# the exact location of the shooter. Turn toward its source and investigate.
+	if health <= 0.0 or incoming_velocity.is_zero_approx():
+		return
+	alert_flash = 0.65
+	var source_bearing: Vector2 = -incoming_velocity.normalized()
+	search_heading = source_bearing
+	scan_anchor = source_bearing.angle()
+	scan_phase = 0.0
+	scan_initialized = true
+
+	# Follow the reverse firing line only as far as accessible open space.
+	# Stop at core/asteroid cover, instead of selecting an unreachable point.
+	var last_clear: Vector2 = position
+	for sample in range(1, 40):
+		var distance: float = minf(float(sample) * 8.0, SHOT_INVESTIGATION_RANGE)
+		var candidate: Vector2 = position + source_bearing * distance
+		if arena.blocked(candidate, COLLISION_RADIUS + 2.0):
+			break
+		last_clear = candidate
+		if distance >= SHOT_INVESTIGATION_RANGE:
+			break
+	search_goal = last_clear
+	if position.distance_to(last_clear) <= SEARCH_ARRIVAL_RADIUS:
+		searching = false
+		looking_around = true
+		look_timer = LOOK_AROUND_SECONDS
+	else:
+		searching = true
+		looking_around = false
+		look_timer = 0.0
+	# Leave last_seen_position unchanged: being hit does not locate a player.
+	# The barrel rotates visibly during step(), not instantaneously here.
+	queue_redraw()
 
 func scan_gun(delta: float) -> void:
 	# Slowly sweep the forward arc, with occasional deliberate 180-degree

@@ -4,9 +4,9 @@ extends Node2D
 const COLLISION_RADIUS := 16.0
 const MAX_HEALTH := 6.0
 const MAX_SHIELDS := 2.0
-const MOVE_SPEED := 88.0
-const ACCELERATION := 130.0
-const TETHER_RANGE := 148.0
+const MOVE_SPEED := 105.0
+const ACCELERATION := 150.0
+const TETHER_RANGE := 170.0
 const HULL_REPAIR_RATE := 0.9
 const SHIELD_REPAIR_RATE := 0.75
 const DamageModel = preload("res://scripts/combat_health.gd")
@@ -19,6 +19,7 @@ var max_health := MAX_HEALTH
 var max_shields := MAX_SHIELDS
 var collision_cooldown := 0.0
 var tether_target: Node2D = null
+var assigned_patient: Node2D = null
 var tether_phase := 0.0
 
 func needs_healing(ally: Node2D) -> bool:
@@ -26,6 +27,13 @@ func needs_healing(ally: Node2D) -> bool:
 
 # Full-map allied distress awareness; repair range itself is still limited.
 func find_patient(allies: Array[Node2D]) -> Node2D:
+	# A repair assignment is sticky. Newly injured closer drones cannot
+	# steal the bot until its existing patient is fully healed or dead.
+	if is_instance_valid(assigned_patient) and allies.has(assigned_patient):
+		if assigned_patient.health > 0.0 and needs_healing(assigned_patient):
+			return assigned_patient
+	assigned_patient = null
+
 	var best: Node2D = null
 	var nearest := INF
 	for ally in allies:
@@ -37,6 +45,7 @@ func find_patient(allies: Array[Node2D]) -> Node2D:
 		if distance < nearest:
 			nearest = distance
 			best = ally
+	assigned_patient = best
 	return best
 
 func step_support(delta: float, allies: Array[Node2D], arena: Node2D) -> void:

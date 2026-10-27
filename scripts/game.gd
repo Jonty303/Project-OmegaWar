@@ -219,13 +219,16 @@ func resolve_collisions() -> void:
 			ship.hit()
 	ship.queue_redraw()
 
-func notify_drones_of_hit(victim: Node2D) -> void:
-	# The victim always feels its own hit. Other sentries only investigate
-	# when the hit itself is within their 360-degree or forward sensor.
+func notify_drones_of_hit(victim: Node2D, incoming_velocity: Vector2 = Vector2.ZERO) -> void:
+	# Witnesses investigate the visible impact as before. A struck Local
+	# Drone additionally looks BACK along the projectile's incoming bearing,
+	# without magically knowing the player's exact position.
 	for observer in enemies:
 		if observer.is_repair_bot:
 			continue
 		observer.alert_to_ally_hit(victim.position, arena, observer == victim)
+	if not victim.is_repair_bot and victim.health > 0.0:
+		victim.react_to_incoming_shot(incoming_velocity, arena)
 
 func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
@@ -267,7 +270,7 @@ func step_shots(delta: float) -> void:
 						if shot.position.distance_to(enemy.position) < enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
 							enemy.velocity += shot.velocity.normalized() * 30.0
 							var destroyed: bool = enemy.take_damage(shot.damage)
-							notify_drones_of_hit(enemy)
+							notify_drones_of_hit(enemy, shot.velocity)
 							var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else Color(1.0, 0.5, 0.25)
 							spawn_debris(shot.position, tint, 0.8)
 							hit_target = true
@@ -335,7 +338,7 @@ func detonate_rocket(rocket: Node2D) -> void:
 				away = Vector2.RIGHT
 		enemy.velocity += away * strength * falloff
 		var destroyed: bool = enemy.take_damage(damage * falloff)
-		notify_drones_of_hit(enemy)
+		notify_drones_of_hit(enemy, enemy.position - origin)
 		if destroyed:
 			defeat_enemy(index)
 	arena.apply_blast(origin, strength * 2.5, radius)
