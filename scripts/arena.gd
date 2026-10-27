@@ -22,7 +22,7 @@ func move_body(body: Node2D, velocity: Vector2, radius: float, delta: float) -> 
 			body.position = next
 	return velocity
 
-func move_shot(shot: Node2D, delta: float) -> void:
+func move_shot(shot, delta: float) -> void:
 	# Axis-separated swept microsteps bounce off the outer walls and the core.
 	# Shots lose no speed during a bounce, but expire after a few ricochets.
 	var steps := maxi(1, int(ceil(shot.velocity.length() * delta / 4.0)))
