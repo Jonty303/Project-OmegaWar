@@ -1,13 +1,18 @@
 extends RefCounted
-# A weapon owns cadence and shot descriptors; the world owns spawning/collision.
-# Future weapon resources can replace fire() without changing ship movement.
+
+# Single fixed weapon for the baseline. Future weapons can plug in here.
+const SHOT_SPEED := 415.0
+const FIRE_INTERVAL := 0.29
 var cooldown := 0.0
 
 func tick(delta: float) -> void:
-	cooldown = maxf(0, cooldown - delta)
+	cooldown = maxf(0.0, cooldown - delta)
 
-func fire(origin: Vector2, heading: Vector2, inherited_velocity: Vector2, rapid: bool) -> Array[Dictionary]:
-	if cooldown > 0:
+func fire(origin: Vector2, heading: Vector2, inherited_velocity: Vector2) -> Array[Dictionary]:
+	if cooldown > 0.0:
 		return []
-	cooldown = 0.10 if rapid else 0.24
-	return [{"position": origin + heading * 17, "velocity": heading * 650 + inherited_velocity * 0.4}]
+	cooldown = FIRE_INTERVAL
+	return [{
+		"position": origin + heading * 17.0,
+		"velocity": heading * SHOT_SPEED + inherited_velocity * 0.45
+	}]

@@ -1,81 +1,61 @@
-# Project-OmegaWar
+# OmegaWar — classic baseline
 
-An original vector-style arena shooter inspired by the momentum combat of Omega Race.
-Initial playable vertical slice for **Godot 4.5.2**, with no external assets or plugins.
+A **Godot 4.5.2** vector-style arcade shooter inspired by the momentum combat
+of Omega Race. This branch intentionally removes all power-ups, boosts, shields,
+rapid-fire modifiers and gravity wells to focus on movement and combat feel.
 
-## Play
+## Getting started
 
-1. Check out this feature branch (or download its ZIP and extract it).
-2. In Godot 4.5.2, Import the root `project.godot`.
-3. Press **F6** with the main scene open, or **F5** to run the project.
-4. Clear waves, collect the lettered pickups, and survive. Enter starts a fresh run.
+Open \`project.godot\` in Godot 4.5.2 and press **F5**. The ship starts with
+three hull points and two seconds of spawn protection. A first wave appears
+after one second; subsequent waves appear **five seconds after the last enemy
+dies**, with three to five ordinary drones chosen each time.
 
-| Control | Action |
-| --- | --- |
-| W / Up | Thrust; releasing retains momentum |
-| A/D or Left/Right | Turn |
-| S / Down | Brake |
-| Space | Fire |
-| Shift + thrust | Afterburner while B pickup is active |
-| P / Escape | Pause / resume |
-| Enter | Restart |
-| Left stick X or Right stick X | Analog steering |
-| Left stick Up / Down | Analog thrust / brake |
-| D-pad Left / Right / Up / Down | Turn / turn / thrust / brake |
-| Controller A / B | Thrust / brake |
-| Controller X / RB / RT | Fire |
-| Controller LB + thrust | Afterburner while B pickup is active |
-| Controller Start | Pause / resume |
-| Controller Y | Restart |
+| Keyboard | Joypad | Action |
+| --- | --- | --- |
+| W / Up | Left stick up, D-pad up or A | Thrust |
+| A / D or Left / Right | Stick X or D-pad left/right | Rotate |
+| S / Down | Left stick down, D-pad down or B | Brake |
+| Space | X, RB or RT | Shoot |
+| P / Escape | Start | Pause / resume |
+| Enter | Y | Restart |
 
-Cyan is your ship. Orange drones chase and shoot. Magenta gravity enemies pull
-your ship within their visible rings; destroy them to remove their fields.
-Walls and the central core bounce ships and absorb bullets.
-S grants a 12-second shield (hits consume 3 seconds), B grants 15 seconds of
-boost availability, and R grants 10 seconds of rapid fire. Timers run from pickup
-collection and freeze while paused. Duplicate pickups refresh their timer.
-The ship starts with three hull points and two seconds of spawn protection.
-Enemy projectiles and contact deal damage; walls do not. Waves are endless,
-with population capped at fourteen. After the final enemy in a wave dies, the
-next randomized wave spawns **five seconds later** (the countdown pauses when
-the game is paused). Enemy count, positions and the mix of chasers and gravity
-wells vary, with at least one gravity well in each wave. The ship, drones,
-pickups and projectiles are drawn about 20% smaller, with matching reduced
-collision radii; the central obstruction is also slightly smaller.
-Controller analog axes use a 0.20 deadzone. There is no victory screen.
+The ship accelerates gently and **never slows down by itself**: velocity is
+retained until you thrust in another direction, apply the brakes, or hit a
+solid object. The central core and arena walls reflect moving ships, with some
+energy lost on collision.
 
-## Validation
+The only enemy is a small orange drone. Its steering follows a short path
+around the core when the direct line to the ship is obstructed, and it fires
+at a slightly predicted position. Shots from either side **ricochet off arena
+walls and the core** at full speed; they expire after four bounces or 3.2
+seconds, whichever comes first. Friendly shots hit drones and hostile shots
+hit the player. High-speed ship/drone collisions separate both bodies, transfer
+momentum using an impulse, briefly distort their outlines ("crunch"), and
+can cause damage. Three hull points lost ends the run.
 
-Run these commands with your Godot 4.5.2 executable (replace `godot` with its path):
+## Test
 
-```sh
+From the project root:
+
+\`\`\`sh
 godot --headless --path . --editor --quit
 godot --headless --path . --script tests/smoke.gd
 godot --headless --path . --quit-after 600
-```
+\`\`\`
 
-The integration smoke test checks momentum, brakes, bounds/core collision,
-all three pickups, shields, invulnerability, gravity range/direction, swept bullet
-hits, scoring, five-second randomized wave respawning, controller mappings,
-controller pause and countdown freezing, death, restart, and projectile cleanup.
+The smoke test covers conserved momentum, slow thrust, braking, core impacts,
+AI navigation around the central obstruction, body impulse and deformation,
+shot hits and rebounds, controller mappings, pause, and five-second waves.
 
-Manual playtest checklist:
-- Fly around every side of the core; test diagonal corners and boosted wall impacts.
-- Release thrust, turn while drifting, brake, and compare boosted acceleration.
-- Collect S/B/R on the upper-left route; observe timers, shield damage, and fire cadence.
-- Approach a magenta enemy and feel its pull; destroy it and confirm the pull stops.
-- Fire through the core: shots should stop. Destroy all enemies, verify a
-  five-second countdown, and check that the next wave varies in size and composition.
-- Plug in an Xbox/PlayStation-style pad. Verify analog steer/thrust, buttons,
-  RT firing, LB boost, Start pause/resume and Y restart; try pausing a countdown.
-- Take three unshielded hits separated by the damage cooldown; restart from game over.
-- Pause during combat, wait, resume; resize the window and check HUD legibility.
+Manual playtest:
+- Thrust, release and coast; ensure no unexplained drift reduction.
+- Slow down by thrusting backwards or using brake, and bounce off a wall.
+- Watch a drone chase you around the middle of the arena, not into the core.
+- Shoot both outer walls and the core; check ricochets.
+- Ram a drone at speed and watch both bodies bounce and distort.
+- Clear a wave, pause during the countdown, then watch 3–5 drones return.
 
-Headless tests do not establish visual quality, keyboard feel, or game balance.
-This prototype has no audio, controller remapping menu, save system, or settings menu.
-
-## Structure and next steps
-
-See [the design roadmap](docs/ROADMAP.md). Drawing uses Godot `_draw()` primitives;
-there are no imported sprites. Actor logic and weapon cadence are separate from
-the world coordinator, which owns collisions, scoring, spawning, and wave state.
+All visuals are procedural line art; no external sprites or plugins are needed.
+There is no audio, settings or save system yet. \`docs/ROADMAP.md\` retains the
+longer-term weapon and arena ideas for later, once this baseline feels right.
