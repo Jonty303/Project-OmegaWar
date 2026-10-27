@@ -83,7 +83,7 @@ func advance_asteroids(delta: float, bodies: Array[Node2D]) -> void:
 					normal = Vector2.RIGHT
 				var correction: Vector2 = next + normal * reach
 				# The actor can be pushed safely, but never takes rock damage.
-				if not blocked_static(correction, body_radius) and asteroid_at(correction, body_radius) == rock:
+				if not blocked_static(correction, body_radius) and asteroid_at(correction, body_radius) == null:
 					body.position = correction
 					body.velocity += normal * minf(speed * 0.30, 38.0)
 				else:

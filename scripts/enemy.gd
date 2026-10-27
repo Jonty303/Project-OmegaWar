@@ -2,8 +2,8 @@ extends Node2D
 
 # Local Drone: a territorial sentry, not a continuously homing attacker.
 const COLLISION_RADIUS := 14.0
-const VISION_RANGE := 350.0
-const WEAPON_RANGE := 265.0
+const VISION_RANGE := 250.0
+const WEAPON_RANGE := 200.0
 const TRAVEL_SPEED := 54.0
 const ACCELERATION := 75.0
 const TURRET_TURN_RATE := 6.0

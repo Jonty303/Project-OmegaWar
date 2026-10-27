@@ -47,6 +47,7 @@ func _ready() -> void:
 	bind_pad_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
 	add_child(arena)
 	arena.wall_bounced.connect(on_wall_bounced)
+	arena.asteroid_struck.connect(on_asteroid_struck)
 	hud.position = Vector2(40, 20)
 	hud.add_theme_font_size_override("font_size", 20)
 	add_child(hud)
@@ -89,6 +90,7 @@ func reset() -> void:
 	shots.clear()
 	effects.clear()
 	arena.reset_flashes()
+	arena.reset_asteroids()
 	if is_instance_valid(ship):
 		ship.free()
 	ship = Ship.new()
@@ -120,6 +122,9 @@ func _physics_process(delta: float) -> void:
 		return
 	arena.advance_flashes(delta)
 	step_effects(delta)
+	var moving_bodies: Array[Node2D] = [ship]
+	moving_bodies.append_array(enemies)
+	arena.advance_asteroids(delta, moving_bodies)
 	if dying:
 		death_timer = maxf(0.0, death_timer - delta)
 		if death_timer <= 0.0:
@@ -162,6 +167,7 @@ func begin_player_death() -> void:
 	# Larger, longer-lived burst than ordinary hits: the ship disintegrates
 	# into moving wreckage before the game-over banner appears.
 	spawn_debris(ship.position, Color(0.3, 1.0, 0.95), 2.1, 32, DEATH_EXPLOSION_TIME)
+	arena.apply_blast(ship.position, 850.0, 180.0)
 
 func resolve_collisions() -> void:
 	# Impulse-based ship/enemy impacts: separation, momentum transfer and
@@ -199,6 +205,7 @@ func resolve_collisions() -> void:
 func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
 	spawn_debris(enemy.position, Color(1.0, 0.5, 0.25), 1.4, 16, 0.62)
+	arena.apply_blast(enemy.position, 320.0, 100.0)
 	score += 100
 	enemies.remove_at(index)
 	enemy.queue_free()
@@ -219,6 +226,8 @@ func step_shots(delta: float) -> void:
 				if shot.bounces_left <= 0 or shot.distance_travelled >= Projectile.MAX_RANGE:
 					break
 				arena.move_shot(shot, delta / float(steps))
+				if shot.dissolving:
+					break # Hit heavy asteroid cover: no damage or ricochet.
 				if shot.hostile:
 					if shot.position.distance_to(ship.position) < Ship.COLLISION_RADIUS + Projectile.HIT_RADIUS:
 						ship.velocity += shot.velocity.normalized() * 24.0
@@ -254,6 +263,9 @@ func spawn_debris(at: Vector2, color: Color, strength: float = 1.0, amount: int 
 
 func on_wall_bounced(at: Vector2, speed: float) -> void:
 	spawn_debris(at, Color(0.55, 0.9, 1.0), clampf(speed / 170.0, 0.5, 1.6))
+
+func on_asteroid_struck(at: Vector2, power: float) -> void:
+	spawn_debris(at, Color(0.62, 0.73, 0.77), clampf(power / 420.0, 0.5, 1.1), 5, 0.27)
 
 func step_effects(delta: float) -> void:
 	for i in range(effects.size() - 1, -1, -1):
