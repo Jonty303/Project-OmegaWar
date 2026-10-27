@@ -1,0 +1,33 @@
+name: Godot 4.5.2 smoke tests
+
+on:
+  push:
+    branches:
+      - codex/omega-war-classic-baseline
+  pull_request:
+    branches:
+      - codex/omega-war-vertical-slice
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  godot-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official Godot 4.5.2
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/godotengine/godot/releases/download/4.5.2-stable/Godot_v4.5.2-stable_linux.x86_64.zip \
+            --output godot.zip
+          unzip -q godot.zip
+          chmod +x Godot_v4.5.2-stable_linux.x86_64
+      - name: Import project and compile scripts
+        run: ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --editor --quit
+      - name: Run regression smoke test
+        run: ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --script tests/smoke.gd
+      - name: Boot main scene for 600 frames
+        run: ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --quit-after 600
