@@ -1,7 +1,7 @@
 extends Node2D
 
 const BOUNDS := Rect2(40, 110, 1120, 630)
-const CORE := Rect2(470, 320, 260, 210)
+const CORE := Rect2(490, 330, 220, 190)
 
 func blocked(point: Vector2, radius: float = 0.0) -> bool:
 	return not BOUNDS.grow(-radius).has_point(point) or CORE.grow(radius).has_point(point)
@@ -32,4 +32,4 @@ func _draw() -> void:
 	draw_rect(CORE, Color(0.035, 0.06, 0.12))
 	draw_rect(CORE, Color(0.5, 0.35, 0.95), false, 3)
 	draw_rect(CORE.grow(-12), Color(0.25, 0.18, 0.5), false, 1)
-	draw_string(ThemeDB.fallback_font, Vector2(532, 420), "OMEGA CORE", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.65, 0.5, 1))
+	draw_string(ThemeDB.fallback_font, Vector2(530, 420), "OMEGA CORE", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.65, 0.5, 1))

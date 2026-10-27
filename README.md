@@ -19,6 +19,14 @@ Initial playable vertical slice for **Godot 4.5.2**, with no external assets or 
 | Shift + thrust | Afterburner while B pickup is active |
 | P / Escape | Pause / resume |
 | Enter | Restart |
+| Left stick X or Right stick X | Analog steering |
+| Left stick Up / Down | Analog thrust / brake |
+| D-pad Left / Right / Up / Down | Turn / turn / thrust / brake |
+| Controller A / B | Thrust / brake |
+| Controller X / RB / RT | Fire |
+| Controller LB + thrust | Afterburner while B pickup is active |
+| Controller Start | Pause / resume |
+| Controller Y | Restart |
 
 Cyan is your ship. Orange drones chase and shoot. Magenta gravity enemies pull
 your ship within their visible rings; destroy them to remove their fields.
@@ -28,7 +36,13 @@ boost availability, and R grants 10 seconds of rapid fire. Timers run from picku
 collection and freeze while paused. Duplicate pickups refresh their timer.
 The ship starts with three hull points and two seconds of spawn protection.
 Enemy projectiles and contact deal damage; walls do not. Waves are endless,
-with population capped at fourteen. There is no victory screen.
+with population capped at fourteen. After the final enemy in a wave dies, the
+next randomized wave spawns **five seconds later** (the countdown pauses when
+the game is paused). Enemy count, positions and the mix of chasers and gravity
+wells vary, with at least one gravity well in each wave. The ship, drones,
+pickups and projectiles are drawn about 20% smaller, with matching reduced
+collision radii; the central obstruction is also slightly smaller.
+Controller analog axes use a 0.20 deadzone. There is no victory screen.
 
 ## Validation
 
@@ -42,19 +56,23 @@ godot --headless --path . --quit-after 600
 
 The integration smoke test checks momentum, brakes, bounds/core collision,
 all three pickups, shields, invulnerability, gravity range/direction, swept bullet
-hits, scoring, wave advancement, pause, death, restart, and projectile cleanup.
+hits, scoring, five-second randomized wave respawning, controller mappings,
+controller pause and countdown freezing, death, restart, and projectile cleanup.
 
 Manual playtest checklist:
 - Fly around every side of the core; test diagonal corners and boosted wall impacts.
 - Release thrust, turn while drifting, brake, and compare boosted acceleration.
 - Collect S/B/R on the upper-left route; observe timers, shield damage, and fire cadence.
 - Approach a magenta enemy and feel its pull; destroy it and confirm the pull stops.
-- Fire through the core: shots should stop. Destroy all enemies to advance.
+- Fire through the core: shots should stop. Destroy all enemies, verify a
+  five-second countdown, and check that the next wave varies in size and composition.
+- Plug in an Xbox/PlayStation-style pad. Verify analog steer/thrust, buttons,
+  RT firing, LB boost, Start pause/resume and Y restart; try pausing a countdown.
 - Take three unshielded hits separated by the damage cooldown; restart from game over.
 - Pause during combat, wait, resume; resize the window and check HUD legibility.
 
 Headless tests do not establish visual quality, keyboard feel, or game balance.
-This prototype has no audio, controller bindings, save system, or settings menu.
+This prototype has no audio, controller remapping menu, save system, or settings menu.
 
 ## Structure and next steps
 

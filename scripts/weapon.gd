@@ -10,4 +10,4 @@ func fire(origin: Vector2, heading: Vector2, inherited_velocity: Vector2, rapid:
 	if cooldown > 0:
 		return []
 	cooldown = 0.10 if rapid else 0.24
-	return [{"position": origin + heading * 22, "velocity": heading * 650 + inherited_velocity * 0.4}]
+	return [{"position": origin + heading * 17, "velocity": heading * 650 + inherited_velocity * 0.4}]
