@@ -33,8 +33,15 @@ func run() -> void:
 	check(game.ship.heat > 0.0 and game.status_hud.text.contains("HEAT"), "Primary fire raises live heat readout")
 	game.ship.heat = 0.0
 	check(game.arena.segments.size() == 28, "Segmented outer walls and core")
-	check(game.Enemy.SHORT_VISION_RANGE == 90.0 and game.Enemy.LONG_VISION_RANGE == 365.0, "Local Drone has near-360 and long forward sensors")
-	check(game.Enemy.WEAPON_RANGE == 240.0 and game.Enemy.FRONT_VISION_HALF_ANGLE <= deg_to_rad(25.0), "Long-range vision is a gun-aligned cone")
+	check(game.Enemy.SHORT_VISION_RANGE == 90.0 and game.Enemy.LONG_VISION_RANGE == 400.0, "Local Drone has near-360 and long forward sensors")
+	check(game.Enemy.WEAPON_RANGE == 240.0 and is_equal_approx(game.Enemy.FRONT_VISION_HALF_ANGLE, deg_to_rad(25.0)), "Forward view widens to 50 degrees without changing weapon range")
+	var wide_view = game.Enemy.new()
+	wide_view.position = Vector2(350, 140)
+	wide_view.turret_angle = 0.0
+	check(wide_view.has_sight_on(Vector2(690, 290), game.arena), "Wider cone detects an off-axis player")
+	check(wide_view.has_sight_on(Vector2(745, 140), game.arena), "Extended forward view reaches almost 400 units")
+	check(not wide_view.has_sight_on(Vector2(755, 140), game.arena), "Long-range view still has a hard limit")
+	wide_view.free()
 	check(is_equal_approx(game.arena.WALL_RESTITUTION, 0.985), "Walls preserve 98.5 percent of impact speed")
 	check(game.StatusBars.SHIELD_BAR_Y_OFFSET < game.StatusBars.HEALTH_BAR_Y_OFFSET, "Shield bar is physically above hull health")
 	check(game.arena.asteroids.size() == 2, "Exactly two permanent asteroids")
@@ -271,6 +278,73 @@ func run() -> void:
 	check(medic.velocity.length() <= medic.MOVE_SPEED + 0.01, "Repair Bot movement is methodical")
 	patient.free()
 	medic.free()
+
+
+	# An actual shield hit alerts observers able to SEE the impact, never
+	# revealing the unseen attacker's position.
+	for leftover in game.shots:
+		leftover.free()
+	game.shots.clear()
+	var witness = game.Enemy.new()
+	witness.position = Vector2(220, 250)
+	witness.turret_angle = 0.0
+	var ally_bot = game.RepairBot.new()
+	ally_bot.position = Vector2(390, 250)
+	game.add_child(witness)
+	game.add_child(ally_bot)
+	game.enemies.append(witness)
+	game.enemies.append(ally_bot)
+	game.ship.position = Vector2(220, 610)
+	game.ship.velocity = Vector2.ZERO
+	game.spawn_shot(Vector2(345, 250), Vector2(415, 0), false)
+	game.step_shots(0.14)
+	check(ally_bot.health == ally_bot.max_health and ally_bot.shields == ally_bot.max_shields - 1.0, "Allied shield hit registers without damaging hull")
+	check(witness.searching and witness.search_goal.is_equal_approx(ally_bot.position), "Drone witnesses a shot striking ally in its forward cone")
+	check(witness.alert_flash > 0.0, "Witness shows an immediate amber alert")
+	check(witness.last_seen_position == Vector2.ZERO and not witness.spotted_once, "Shot never reveals unseen attacker coordinates")
+	witness.step(0.12, Vector2(1040, 610), game.arena)
+	check(not witness.ready_to_fire(Vector2(1040, 610), game.arena), "Alerted drone cannot fire without actual contact")
+	check(witness.velocity.x > 0.0, "Alerted drone starts investigating the hit")
+	game.enemies.clear()
+	witness.free()
+	ally_bot.free()
+
+	# A witness must actually be able to perceive the shot: no alerts from
+	# behind its gun, beyond vision, or through the core. Self-hit is special.
+	var victim_point := Vector2(390, 250)
+	var flank = game.Enemy.new()
+	flank.position = Vector2(220, 375)
+	flank.turret_angle = 0.0
+	game.add_child(flank)
+	check(not flank.alert_to_ally_hit(victim_point, game.arena), "Sideways impact outside cone does not alert")
+	check(not flank.searching, "Sentry keeps scanning after unseen hit")
+	flank.free()
+	var close_rear = game.Enemy.new()
+	close_rear.position = Vector2(460, 250)
+	close_rear.turret_angle = 0.0
+	game.add_child(close_rear)
+	check(close_rear.alert_to_ally_hit(victim_point, game.arena), "90-unit omnidirectional sensor sees rear impact")
+	check(close_rear.searching, "Close rear impact starts investigation")
+	close_rear.free()
+	var too_far = game.Enemy.new()
+	too_far.position = Vector2(140, 170)
+	too_far.turret_angle = 0.0
+	game.add_child(too_far)
+	check(not too_far.alert_to_ally_hit(Vector2(560, 170), game.arena), "Impact beyond 400 units does not alert")
+	too_far.free()
+	var occluded = game.Enemy.new()
+	occluded.position = Vector2(465, 425)
+	occluded.turret_angle = 0.0
+	game.add_child(occluded)
+	check(not occluded.alert_to_ally_hit(Vector2(715, 425), game.arena), "Core blocks witness vision of shot")
+	occluded.free()
+	var struck = game.Enemy.new()
+	struck.position = Vector2(390, 250)
+	struck.turret_angle = PI
+	game.add_child(struck)
+	check(struck.alert_to_ally_hit(struck.position, game.arena, true), "Drone notices being struck even with turret backwards")
+	check(struck.searching and struck.last_seen_position == Vector2.ZERO, "Own shot impact does not reveal shooter")
+	struck.free()
 
 	# Integrate sentry fire through the main coordinator.
 	var shooter = game.Enemy.new()

@@ -29,7 +29,7 @@ other ships and heavy asteroids remains governed by their own collision rules.
 
 The initial enemy is the **Local Drone**, a slow, territorial sentry. It spawns
 at rest and uses **two separate vision zones**: close-range 360-degree
-awareness within **90 units**, and a **365-unit forward view cone**, 40 degrees
+awareness within **90 units**, and a **400-unit forward view cone**, 50 degrees
 wide, aligned with its visible gun barrel. The central core and asteroids block
 both sensors. Its independent turret still rotates rapidly (6 radians/second)
 while tracking an acquired target. The gun can now reach **240 units** and only
@@ -46,6 +46,14 @@ coordinates. Once it arrives, it **stops and looks around for six seconds**;
 if it fails to reacquire, it returns to idle sentry scanning. It never fires
 at an invisible target.
 Movement uses corner-aware pathfinding around the central obstruction.
+
+**Allied-hit alerts:** when a bullet strikes an allied drone or Repair Bot,
+Local Drones that have the impact within their own 90-unit all-around sensor
+or 400-unit forward cone, and an unobstructed view, become alert. The struck
+Local Drone always notices its own hit. Alerted drones show a brief amber
+ring, turn toward the impact and investigate that location; they do not
+learn the unseen shooter's position or fire blindly. The central core and
+asteroids can hide an impact from another sentry.
 
 Shots from either side **ricochet off arena
 walls and the core** at full speed; they expire after four bounces or 3.2
@@ -128,8 +136,8 @@ godot --headless --path . --quit-after 600
 ```
 
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
-Local Drone dual-zone vision, slow sweeping sentry turret and last-sighting
-investigation, stronger wall rebounds, shield-bar ordering, worldwide Repair
+Local Drone dual-zone vision, witnessed allied-hit alerts, slow sweeping
+sentry turret and last-sighting investigation, stronger wall rebounds, shield-bar ordering, worldwide Repair
 Bot awareness and faster response, rock/core occlusion and heavy asteroid impulses,
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
@@ -143,9 +151,13 @@ Manual playtest:
 - Watch a Local Drone stay where it spawns when you are far away.
 - Approach a Local Drone from behind at roughly 150 units: it should not see
   you until its gun sweeps past or you get inside the 90-unit proximity radius.
-- Approach along the gun barrel from farther away: the 365-unit, 40-degree
+- Approach along the gun barrel from farther away: the 400-unit, 50-degree
   forward cone should detect you, but its weapon only fires within 240 units.
 - Watch the idle gun sweep gradually and occasionally turn to check its rear.
+- Shoot an ally in front of another Local Drone: the witness should show an
+  amber alert ring and investigate that impact, even if it never saw you.
+  A witness with its back turned, outside range or behind cover should not
+  react. A struck Local Drone reacts from any direction.
 - Hide behind one of the two upper-right asteroids and verify the drone
   cannot spot or shoot through it; circle the asteroid to ambush the drone.
 - Crash into a rock: it should drift slowly, block your path without hurting
