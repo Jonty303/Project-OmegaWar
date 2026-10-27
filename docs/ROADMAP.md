@@ -4,8 +4,9 @@
 
 This **classic-baseline** branch is focused on game feel:
 - one arena and central obstruction, plus two heavy movable asteroids as cover;
-- slow acceleration and momentum without passive decay, 98.5% wall/core
-  bounce restitution (but independent asteroid/ship impact physics);
+- 145-unit/s² acceleration, 320-unit/s maximum ship speed and momentum
+  without passive decay; 98.5% wall/core bounce restitution (but independent
+  asteroid/ship impact physics);
 - two to four Local Drones: 90-unit omnidirectional vision and a 400-unit,
   50-degree barrel-facing cone, 240-unit weapon reach, slow idle turret sweeps,
   rare about-faces, last-sighting investigation and witnessing ally hits
@@ -17,6 +18,9 @@ This **classic-baseline** branch is focused on game feel:
   placeholders for secondary ammunition and ability cooldown;
 - physical ship/enemy impacts with separation, impulses and temporary debris;
 - ship death explosions with a brief wreckage phase before game over;
+- baseline primary **Pulse Laser** with 500-unit/s aim-aligned velocity
+  independent of the ship's velocity, one damage, 1,150-unit range,
+  0.29-second cadence, six heat per shot;
 - projectiles that ricochet off walls and the core, but disintegrate
   against asteroids and apply a small kinetic push;
 - keyboard and controller inputs, pause, score and five-second wave restarts.
@@ -38,7 +42,9 @@ obstacles.
 
 ## Near-term acceptance targets
 
-1. The ship feels controllable and inertia is consistent at different frame rates.
+1. The ship feels controllable and inertia is consistent at different frame
+   rates, with a 320-unit/s max and no friction below it; Pulse Laser shots
+   outpace the ship and never inherit the ship's velocity.
 2. Local Drones can be ambushed from behind, only see far in their turret cone,
    and travel to a last sighting or witnessed allied impact before stopping
    to scan. Witness alerts never expose unseen attacker coordinates.

@@ -21,9 +21,11 @@ after the last enemy dies**, with **two to four Local Drones and one Repair Bot*
 | P / Escape | Start | Pause / resume |
 | Enter | Y | Restart |
 
-The ship accelerates gently and **never slows down by itself**: velocity is
-retained until you thrust in another direction, apply the brakes, or hit a
-solid object. Outer walls and the central core now retain **98.5% of the
+The ship accelerates gently (145 units/s²) and **never slows down by itself**:
+velocity is retained until you thrust in another direction, apply the brakes
+or hit a solid object. An explicit **320-unit/s ship maximum** prevents
+unbounded thrust acceleration; this cap does not introduce passive drag
+at any lower speed. Outer walls and the central core now retain **98.5% of the
 normal component of impact speed** on a bounce. Momentum exchange with
 other ships and heavy asteroids remains governed by their own collision rules.
 
@@ -71,6 +73,17 @@ leave a burst of debris instead of merely disappearing.
 arena wall, and three span each vertical arena wall. The central core is also
 split into separate sections. When a ship or shot bounces, the particular
 section hit briefly flashes white, like the original Omega Race.
+
+**Primary weapon — Pulse Laser:** baseline rapid pulses deal **1 damage**
+per hit, generate **6 heat** per shot, and fire every **0.29 seconds**
+when held (approximately 3.45 shots/s). Standard shot range is **1,150 units**.
+Pulse Laser shots move at a fixed **500 units/s**, more than 1.5× the ship's
+320-unit/s top speed. Their velocity is *exactly the ship's gun-forward heading
+times 500*; no ship speed, drift, or momentum is inherited. For example,
+while the ship flies upward and aims slightly downward-right, the laser fires
+downward-right, not upward-diagonally. The bottom HUD names PULSE LASER as
+the equipped primary. Shot damage and range now travel with the projectile
+data, allowing future weapons to supply distinct values.
 
 **Directional bullets:** projectile artwork always follows its actual
 velocity, including immediately after ricochets. Bullets can travel up to
@@ -142,11 +155,17 @@ Bot awareness and faster response, rock/core occlusion and heavy asteroid impuls
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
 shield-first damage and healing, Repair Bot targeting and tether, mixed waves,
-live bottom HUD, body impulses, death explosions and debris, wall flashes,
+live bottom HUD, strict ship speed limit, fixed-speed inertia-independent
+Pulse Laser aiming/range/damage, body impulses, death explosions and debris, wall flashes,
 bullet headings, range disintegration, controller pause and wave respawns.
 
 Manual playtest:
 - Thrust, release and coast; ensure no unexplained drift reduction.
+- Accelerate to 320 units/s and confirm further thrust does not push above
+  the ship speed limit. Your velocity below that limit never decays passively.
+- Fly upward at speed while aiming slightly below horizontal to the right:
+  Pulse Laser shots must travel precisely down-right with no upward drift.
+  Confirm laser speed stays at 500 units/s regardless of your ship's speed.
 - Slow down by thrusting backwards or using brake, and bounce off a wall.
 - Watch a Local Drone stay where it spawns when you are far away.
 - Approach a Local Drone from behind at roughly 150 units: it should not see

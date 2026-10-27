@@ -55,6 +55,13 @@ func run() -> void:
 
 	check(game.Ship.THRUST_ACCELERATION < 320.0, "Slow acceleration preserved")
 	check(game.ship.weapon.SHOT_SPEED < 650.0, "Slower projectiles preserved")
+	check(game.ship.weapon.NAME == "Pulse Laser", "Initial primary weapon is Pulse Laser")
+	check(is_equal_approx(game.Ship.MAX_SPEED, 320.0), "Ship has an explicit practical top speed")
+	check(is_equal_approx(game.ship.weapon.SHOT_SPEED, 500.0), "Pulse Laser travels at fixed speed")
+	check(game.ship.weapon.SHOT_SPEED > game.Ship.MAX_SPEED * 1.5, "Pulse Laser outpaces maximum ship speed by over 50 percent")
+	check(is_equal_approx(game.ship.weapon.DAMAGE, 1.0) and is_equal_approx(game.ship.weapon.MAX_RANGE, game.Projectile.MAX_RANGE), "Pulse Laser has standard damage and range")
+	check(is_equal_approx(game.ship.weapon.FIRE_INTERVAL, 0.29) and is_equal_approx(game.ship.weapon.HEAT_PER_SHOT, 6.0), "Pulse Laser retains basic rate and heat")
+	check(game.status_hud.text.contains("PRIMARY: PULSE LASER"), "HUD identifies equipped Pulse Laser")
 
 	Input.action_press("thrust")
 	game._physics_process(0.1)
@@ -62,6 +69,49 @@ func run() -> void:
 	var velocity: Vector2 = game.ship.velocity
 	game._physics_process(0.1)
 	check(game.ship.velocity.is_equal_approx(velocity), "No passive momentum decay")
+
+	# Ship velocity is capped without damping ordinary coasting.
+	game.ship.position = Vector2(220, 220)
+	game.ship.rotation = PI / 2.0
+	game.ship.velocity = Vector2(319.0, 0.0)
+	Input.action_press("thrust")
+	game.ship.step(0.2, game.arena)
+	Input.action_release("thrust")
+	check(game.ship.velocity.length() <= game.Ship.MAX_SPEED + 0.001, "Thrust cannot exceed ship top speed")
+	var coasting_at_cap: Vector2 = game.ship.velocity
+	game.ship.step(0.1, game.arena)
+	check(game.ship.velocity.is_equal_approx(coasting_at_cap), "Speed cap does not introduce coasting drag")
+	game.ship.velocity = Vector2(600, 0)
+	game.ship.enforce_speed_limit()
+	check(is_equal_approx(game.ship.velocity.length(), game.Ship.MAX_SPEED), "Knockback cannot exceed the top speed")
+
+	# Ship moving UP and gun pointing slightly DOWN-RIGHT, as in screenshot:
+	# Pulse Laser must travel strictly DOWN-RIGHT, not inherit upward drift.
+	game.ship.position = Vector2(220, 600)
+	game.ship.rotation = PI / 2.0 + 0.12
+	game.ship.velocity = Vector2(0, -255)
+	game.ship.weapon.cooldown = 0.0
+	Input.action_press("fire")
+	game._physics_process(1.0 / 60.0)
+	Input.action_release("fire")
+	check(game.shots.size() == 1, "Pulse Laser spawns during sideways flight")
+	if game.shots.size() > 0:
+		var pulse = game.shots[0]
+		var muzzle_heading: Vector2 = Vector2.UP.rotated(game.ship.rotation)
+		check(pulse.velocity.is_equal_approx(muzzle_heading * game.ship.weapon.SHOT_SPEED), "Laser ignores perpendicular ship velocity")
+		check(pulse.velocity.y > 0.0 and game.ship.velocity.y < 0.0, "Laser follows aim even when ship flies opposite bullet's vertical component")
+		check(is_equal_approx(pulse.velocity.length(), game.ship.weapon.SHOT_SPEED), "Laser speed never inherits ship momentum")
+		check(pulse.visual_heading.is_equal_approx(muzzle_heading), "Visible shot axis follows gun, not ship drift")
+		check(is_equal_approx(pulse.damage, game.ship.weapon.DAMAGE) and is_equal_approx(pulse.max_range, game.ship.weapon.MAX_RANGE), "Pulse Laser passes damage and range to projectile")
+		var shot_origin: Vector2 = pulse.position
+		game.step_shots(0.10)
+		check(absf((pulse.position - shot_origin).cross(muzzle_heading)) < 0.05, "Projectile flies straight along gun heading after launch")
+	for pulse in game.shots:
+		pulse.free()
+	game.shots.clear()
+	game.ship.position = Vector2(220, 425)
+	game.ship.rotation = 0.0
+	game.ship.velocity = Vector2.ZERO
 
 	# Wall flash is local: exactly one section lights up, and ship stays intact.
 	game.ship.position = Vector2(60, 200)
