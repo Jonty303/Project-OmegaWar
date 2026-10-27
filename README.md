@@ -31,8 +31,20 @@ at a slightly predicted position. Shots from either side **ricochet off arena
 walls and the core** at full speed; they expire after four bounces or 3.2
 seconds, whichever comes first. Friendly shots hit drones and hostile shots
 hit the player. High-speed ship/drone collisions separate both bodies, transfer
-momentum using an impulse, briefly distort their outlines ("crunch"), and
-can cause damage. Three hull points lost ends the run.
+momentum using an impulse, and can cause damage. The ship and enemy
+silhouettes never deform or blink after hits. Instead, small bursts of debris
+scatter and fade. Three hull points lost ends the run.
+
+**Sectioned walls:** five individually flashing sections span each horizontal
+arena wall, and three span each vertical arena wall. The central core is also
+split into separate sections. When a ship or shot bounces, the particular
+section hit briefly flashes white, like the original Omega Race.
+
+**Directional bullets:** projectile artwork always follows its actual
+velocity, including immediately after ricochets. Bullets can travel up to
+1,150 world units, bounce up to four times, and live for at most 3.2 seconds.
+When they reach a limit, they stop and disintegrate into short-lived,
+fading fragments for 0.34 seconds rather than suddenly disappearing.
 
 ## Test
 
@@ -45,15 +57,18 @@ godot --headless --path . --quit-after 600
 ```
 
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
-AI navigation around the central obstruction, body impulse and deformation,
-shot hits and rebounds, controller mappings, pause, and five-second waves.
+AI navigation around the central obstruction, body impulse and debris particles, segmented wall flashes, bullet heading,
+shot hits, range expiry with disintegration, and rebounds, controller mappings, pause, and five-second waves.
 
 Manual playtest:
 - Thrust, release and coast; ensure no unexplained drift reduction.
 - Slow down by thrusting backwards or using brake, and bounce off a wall.
 - Watch a drone chase you around the middle of the arena, not into the core.
-- Shoot both outer walls and the core; check ricochets.
-- Ram a drone at speed and watch both bodies bounce and distort.
+- Shoot both outer walls and the core; check ricochets, bullet heading,
+  and that only the struck wall section flashes.
+- Let a bullet expire at the end of its range and watch its fading fragments.
+- Ram a drone at speed: bodies bounce, a tiny debris cloud appears, and
+  neither hull changes shape or blinks.
 - Clear a wave, pause during the countdown, then watch 3–5 drones return.
 
 All visuals are procedural line art; no external sprites or plugins are needed.
