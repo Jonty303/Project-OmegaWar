@@ -34,8 +34,8 @@ The initial enemy is the **Local Drone**, a slow, territorial sentry. It spawns
 at rest and uses **two separate vision zones**: close-range 360-degree
 awareness within **90 units**, and a **400-unit forward view cone**, 50 degrees
 wide, aligned with its visible gun barrel. The central core and asteroids block
-both sensors. Its independent turret still rotates rapidly (6 radians/second)
-while tracking an acquired target. The gun can now reach **240 units** and only
+both sensors. Its independently rotating turret now tracks at **7.5
+radians/second** when alerted or aiming at an acquired target. The gun can now reach **240 units** and only
 fires when the target is visible, in range and aligned.
 
 When idle, the gun **slowly sweeps left and right** rather than pointing in
@@ -52,10 +52,12 @@ Movement uses corner-aware pathfinding around the central obstruction.
 
 **Allied-hit alerts:** when a bullet strikes an allied drone or Repair Bot,
 Local Drones that have the impact within their own 90-unit all-around sensor
-or 400-unit forward cone, and an unobstructed view, become alert. The struck
-Local Drone always notices its own hit. Alerted drones show a brief amber
-ring, turn toward the impact and investigate that location; they do not
-learn the unseen shooter's position or fire blindly. The central core and
+or 400-unit forward cone, and an unobstructed view, become alert. The struck Local Drone notices its own hit and **turns toward the
+direction from which the bullet arrived**, investigating along that firing
+line and searching for a target. The turret rotates rather than snapping,
+and cover limits its travel. Witnesses show an amber ring and investigate
+the hit location. None of these reactions reveal an unseen shooter's
+exact position or allow blind firing. The central core and
 asteroids can hide an impact from another sentry.
 
 Shots from either side **ricochet off arena
@@ -95,14 +97,17 @@ fading fragments for 0.34 seconds rather than suddenly disappearing.
 ## Repair Bots, shield pools and status displays
 
 **Repair Bots** are the second enemy type. They have **no weapons**, six hull
-points, and a two-point shield. They float at up to **88 units/second** when
-responding to an injured allied unit, or hold position when one is close enough
-to heal. They can detect a wounded ally **anywhere in the arena**; only
+points, and a two-point shield. They float at up to **105 units/second** (150 units/s² acceleration)
+when responding to an injured allied unit, or hold position when one is close
+enough to heal. They can detect a wounded ally **anywhere in the arena**; only
 the green tether has limited range and requires clear line of sight. A jagged **green electrical tether** joins a Repair Bot to the
-damaged ally, only within 148 units and with clear line of sight. The tether
+damaged ally, only within **170 units** and with clear line of sight. The tether
 restores **0.9 hull HP and 0.75 shield points per second**, up to the ally's
 normal maximum. The bot can repair other enemies (including allied Repair Bots),
-but never the player or itself. It chooses the nearest wounded ally.
+but never the player or itself. It chooses the nearest wounded ally
+**only while unassigned**. Once assigned, it stays focused on that patient
+even if another drone is injured closer by. It picks a new patient only
+once the current one is fully healed, destroyed or removed.
 
 **Shields are a separate health pool**: attacks must remove all current shields
 before hull/structure HP can be reduced. Excess damage from a single hit
@@ -182,9 +187,11 @@ godot --headless --path . --quit-after 600
 ```
 
 The smoke test covers conserved momentum, slow thrust, braking, core impacts,
-Local Drone dual-zone vision, witnessed allied-hit alerts, slow sweeping
-sentry turret and last-sighting investigation, stronger wall rebounds, shield-bar ordering, worldwide Repair
-Bot awareness and faster response, rock/core occlusion and heavy asteroid impulses,
+Local Drone dual-zone vision, incoming-shot bearing investigation, quicker
+turret tracking, witnessed allied-hit alerts, slow sweeping sentry turret
+and last-sighting investigation, stronger wall rebounds, shield-bar ordering, worldwide Repair
+Bot awareness, locked healing assignments and faster response,
+rock/core occlusion and heavy asteroid impulses,
 shot absorption, repeated thrust, blast force, stationary sentry behaviour,
 last-known-position searching, independent turret alignment and firing,
 shield-first damage and healing, Repair Bot targeting and tether, mixed waves,
@@ -211,7 +218,9 @@ Manual playtest:
 - Shoot an ally in front of another Local Drone: the witness should show an
   amber alert ring and investigate that impact, even if it never saw you.
   A witness with its back turned, outside range or behind cover should not
-  react. A struck Local Drone reacts from any direction.
+  react. A struck Local Drone should turn toward the incoming shot's source
+  and investigate that bearing, even if the player has moved away; it must
+  still see the player before firing.
 - Hide behind one of the two upper-right asteroids and verify the drone
   cannot spot or shoot through it; circle the asteroid to ambush the drone.
 - Crash into a rock: it should drift slowly, block your path without hurting
@@ -240,9 +249,10 @@ Manual playtest:
   before the game-over message appears; restart with Enter or controller Y.
 - Shoot a shielded Repair Bot: its blue shield pool must reach zero before
   the green health pool is damaged. The shield/health mini-bars should appear.
-- Injure a Local Drone anywhere in the arena: a Repair Bot should notice
-  and travel toward it faster than before, then tether and heal when close.
-  Check that it never heals the player.
+- Injure a Local Drone anywhere in the arena: a Repair Bot should respond
+  at up to 105 units/s, then tether once within 170 units. Injure a second,
+  closer drone; the bot should finish healing its first patient before
+  switching. Destroy the patient to release its assignment.
 - Check the bottom HUD updates with speed, thrust percentage, health,
   shields and heat. Secondary ammo/cooldown should explicitly say unavailable.
 - Destroy a drone and verify its debris burst.

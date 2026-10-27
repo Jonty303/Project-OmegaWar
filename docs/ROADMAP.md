@@ -9,10 +9,12 @@ This **classic-baseline** branch is focused on game feel:
   asteroid/ship impact physics);
 - two to four Local Drones: 90-unit omnidirectional vision and a 400-unit,
   50-degree barrel-facing cone, 240-unit weapon reach, slow idle turret sweeps,
-  rare about-faces, last-sighting investigation and witnessing ally hits
-  only within their real sensors, subject to cover occlusion;
+  rare about-faces, 7.5-radian/s tracking, last-sighting and incoming-shot
+  bearing investigation, and witnessing ally hits only within their real
+  sensors, subject to cover occlusion;
 - one unarmed Repair Bot per wave with global awareness of damaged allies,
-  faster movement and short-range electric repair tether;
+  a locked patient until fully healed or destroyed, 105-unit/s movement
+  and a 170-unit electrical healing tether;
 - separate hull HP and shield HP, shield-first damage, shield-above-hull mini-bars,
   and a compact bottom HUD for speed, thrust, health, shields, heat and
   placeholders for secondary ammunition and ability cooldown;
@@ -51,8 +53,9 @@ obstacles.
    rates, with a 320-unit/s max and no friction below it; Pulse Laser shots
    outpace the ship and never inherit the ship's velocity.
 2. Local Drones can be ambushed from behind, only see far in their turret cone,
-   and travel to a last sighting or witnessed allied impact before stopping
-   to scan. Witness alerts never expose unseen attacker coordinates.
+   and investigate the last sighting, a witnessed allied impact, or the
+   reverse bearing of an incoming shot. Alerts never expose the unseen
+   attacker's exact coordinates.
 3. Bullet ricochets behave predictably against every arena surface.
 4. Ramming enemies transfers momentum, emits debris, and can cause damage.
    Asteroid impacts never damage ships and persistent thrust slowly moves them.
