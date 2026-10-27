@@ -371,7 +371,7 @@ func run() -> void:
 	turn_missile.steer(0.1, Vector2(210, 100))
 	check(turn_missile.is_homing and turn_missile.hostile and turn_missile.velocity.y < 0.0, "Enemy missile steers toward player instead of flying straight")
 	check(turn_missile.velocity.x > 0.0 and is_equal_approx(turn_missile.velocity.length(), turn_missile.SPEED), "Homing turn is gradual at fixed missile speed")
-	check(turn_missile.blast_radius < game.Rocket.BLAST_RANGE and turn_missile.damage == 1.0, "Enemy missile has smaller blast and damage than player rocket")
+	check(turn_missile.blast_radius < game.ship.secondary.BLAST_RADIUS and turn_missile.damage == 1.0, "Enemy missile has smaller blast and damage than player rocket")
 	turn_missile.free()
 
 	game.ship.position = Vector2(180, 600)
