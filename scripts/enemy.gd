@@ -26,6 +26,7 @@ var max_health := 2.0
 var shields := 0.0
 var max_shields := 0.0
 var is_repair_bot := false
+var is_missile_drone := false
 var fire_timer := 1.8
 var collision_cooldown := 0.0
 var turret_angle := 0.0
@@ -159,9 +160,8 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 	var destination: Vector2 = position
 	var should_move := false
 	if can_see_player:
-		if position.distance_to(player_position) > WEAPON_RANGE * 0.90:
-			destination = player_position
-			should_move = true
+		destination = combat_destination(player_position, arena)
+		should_move = position.distance_to(destination) > 8.0
 	elif searching:
 		if position.distance_to(search_goal) <= SEARCH_ARRIVAL_RADIUS:
 			searching = false
@@ -204,6 +204,12 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 		if not bearing.is_zero_approx():
 			turret_angle = rotate_toward(turret_angle, bearing.angle(), TURRET_TURN_RATE * delta)
 	queue_redraw()
+
+func combat_destination(player_position: Vector2, _arena: Node2D) -> Vector2:
+	# Ordinary Local Drones approach only until their turret is in range.
+	if position.distance_to(player_position) > WEAPON_RANGE * 0.90:
+		return player_position
+	return position
 
 func ready_to_fire(player_position: Vector2, arena: Node2D) -> bool:
 	if not can_see_player or fire_timer > 0.0:
