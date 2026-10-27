@@ -56,7 +56,7 @@ func clear_for_rock(rock: Node2D, point: Vector2) -> bool:
 			return false
 	return true
 
-func advance_asteroids(delta: float, bodies: Array[Node2D]) -> void:
+func advance_asteroids(delta: float, bodies: Array) -> void:
 	# Heavy rocks drift under impulses; environmental resistance eventually
 	# settles them, unlike the player's frictionless inertial movement.
 	for rock in asteroids:
