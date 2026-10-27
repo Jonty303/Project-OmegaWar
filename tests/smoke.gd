@@ -113,6 +113,148 @@ func run() -> void:
 	game.ship.rotation = 0.0
 	game.ship.velocity = Vector2.ZERO
 
+
+	# Retro burners use the special action and slow a coasting ship without
+	# introducing passive friction or reversing it through zero.
+	check(InputMap.has_action("special") and InputMap.has_action("fire_secondary"), "Special and rocket controls are mapped")
+	game.ship.velocity = Vector2(300, 0)
+	game.ship.rotation = 0.0
+	Input.action_press("special")
+	game.ship.step(0.25, game.arena)
+	check(game.ship.retro_active and game.ship.velocity.x < 300.0 and game.ship.velocity.x > 0.0, "Retro burners reduce speed and activate twin front flames")
+	var speed_during_retro: float = game.ship.velocity.length()
+	Input.action_release("special")
+	game.ship.step(0.1, game.arena)
+	check(not game.ship.retro_active and is_equal_approx(game.ship.velocity.length(), speed_during_retro), "Flames stop on release and inertia persists")
+	game.ship.velocity = Vector2(3, 0)
+	Input.action_press("special")
+	game.ship.step(0.5, game.arena)
+	Input.action_release("special")
+	check(game.ship.velocity.is_zero_approx(), "Retro burners stop without reversing")
+	game.ship.position = Vector2(220, 425)
+	game.ship.velocity = Vector2.ZERO
+
+	# Rockets inherit ALL launch momentum; Pulse Laser does not.
+	check(game.ship.secondary.NAME == "Unguided Rockets", "Secondary is unguided rockets")
+	check(game.ship.secondary.MAX_AMMO == 6 and game.ship.secondary.ammo == 6, "Limited six-rocket supply")
+	check(game.ship.secondary.SHOT_SPEED < game.ship.weapon.SHOT_SPEED, "Rockets travel slower than Pulse Laser relative to ship")
+	game.ship.rotation = PI / 2.0
+	game.ship.position = Vector2(220, 600)
+	game.ship.velocity = Vector2(120, -60)
+	var before_heat: float = game.ship.heat
+	game.fire_player_rocket()
+	check(game.rockets.size() == 1 and game.ship.secondary.ammo == 5, "Rockets launch and consume one round")
+	if game.rockets.size() > 0:
+		var rocket = game.rockets[0]
+		check(rocket.is_rocket and rocket.velocity.is_equal_approx(Vector2(470, -60)), "Rocket inherits horizontal and vertical launch inertia")
+		check(rocket.visual_heading.is_equal_approx(rocket.velocity.normalized()), "Rocket visual faces actual momentum-adjusted heading")
+		check(rocket.max_range < game.Projectile.MAX_RANGE and rocket.damage == 2.0, "Rocket medium range and damage")
+	check(game.ship.heat > before_heat, "Rocket launch adds heat")
+	game.fire_player_rocket()
+	check(game.rockets.size() == 1 and game.ship.secondary.ammo == 5, "Secondary cooldown blocks double shots")
+	game.ship.secondary.tick(1.0)
+	for rocket in game.rockets:
+		rocket.free()
+	game.rockets.clear()
+	game.ship.velocity = Vector2.ZERO
+	game.ship.rotation = 0.0
+
+	# Rockets ricochet on arena/core walls rather than exploding there.
+	var wall_rocket = game.Rocket.new()
+	wall_rocket.position = Vector2(100, 230)
+	wall_rocket.velocity = Vector2(-350, 0)
+	wall_rocket.sync_visual_heading()
+	game.add_child(wall_rocket)
+	game.rockets.append(wall_rocket)
+	game.step_rockets(0.20)
+	check(game.rockets.has(wall_rocket) and wall_rocket.velocity.x > 0.0 and wall_rocket.bounces_left == 2, "Rocket bounces and remains live after wall impact")
+	check(wall_rocket.visual_heading.is_equal_approx(wall_rocket.velocity.normalized()), "Rocket sprite turns after bounce")
+	for rocket in game.rockets:
+		rocket.free()
+	game.rockets.clear()
+
+	# A rocket striking a heavy asteroid explodes and imparts impulse.
+	game.arena.reset_asteroids()
+	var blast_rock = game.arena.asteroids[0]
+	var asteroid_rocket = game.Rocket.new()
+	asteroid_rocket.position = Vector2(820, 226)
+	asteroid_rocket.velocity = Vector2(350, 0)
+	asteroid_rocket.sync_visual_heading()
+	game.add_child(asteroid_rocket)
+	game.rockets.append(asteroid_rocket)
+	var before_effects: int = game.effects.size()
+	game.step_rockets(0.30)
+	check(game.rockets.is_empty() and game.effects.size() > before_effects, "Asteroid contact produces medium expanding explosion")
+	check(blast_rock.velocity.x > 0.0, "Rocket explosion shifts heavy asteroid")
+	game.arena.reset_asteroids()
+
+	# Blast damage is radial, affects multiple enemies, and pushes inertia.
+	game.ship.position = Vector2(150, 600)
+	game.ship.velocity = Vector2.ZERO
+	var near_enemy = game.Enemy.new()
+	near_enemy.position = Vector2(370, 230)
+	near_enemy.health = 2.0
+	var far_enemy = game.Enemy.new()
+	far_enemy.position = Vector2(425, 230)
+	far_enemy.health = 2.0
+	game.add_child(near_enemy)
+	game.add_child(far_enemy)
+	game.enemies.append(near_enemy)
+	game.enemies.append(far_enemy)
+	var cluster_rocket = game.Rocket.new()
+	cluster_rocket.position = Vector2(355, 230)
+	cluster_rocket.velocity = Vector2(350, 0)
+	game.add_child(cluster_rocket)
+	game.rockets.append(cluster_rocket)
+	game.step_rockets(0.04)
+	check(game.rockets.is_empty(), "Rocket detonates on enemy contact")
+	check(not game.enemies.has(near_enemy), "Close blast can destroy local drone")
+	check(far_enemy.health < far_enemy.max_health and far_enemy.velocity.x > 0.0, "Outer blast damages and pushes another drone")
+	for ally in game.enemies:
+		ally.free()
+	game.enemies.clear()
+
+	# The blast has NO friendly-fire exemption: its owner loses shields first,
+	# then hull after depletion. Invulnerability is still honored normally.
+	game.ship.position = Vector2(220, 580)
+	game.ship.velocity = Vector2.ZERO
+	game.ship.shields = 2.0
+	game.ship.hull = 3.0
+	game.ship.invulnerable = 0.0
+	var own_rocket = game.Rocket.new()
+	own_rocket.position = Vector2(238, 580)
+	own_rocket.velocity = Vector2(350, 0)
+	game.add_child(own_rocket)
+	game.rockets.append(own_rocket)
+	game.step_rockets(0.01)
+	check(game.rockets.is_empty() and game.ship.shields < 2.0 and game.ship.hull == 3.0, "Self-explosion depletes shield before player hull")
+	check(game.ship.velocity.length() > 0.0, "Self blast changes player's inertia")
+	game.ship.shields = 0.0
+	game.ship.invulnerable = 0.0
+	var close_blast = game.Rocket.new()
+	close_blast.position = game.ship.position + Vector2(12, 0)
+	close_blast.velocity = Vector2(-100, 0)
+	game.detonate_rocket(close_blast)
+	check(game.ship.hull < 3.0, "Own rocket explosion damages unshielded hull")
+	close_blast.free()
+
+	# Mid-range flight end detonates instead of quietly fading, and each
+	# rocket can only explode once.
+	game.ship.position = Vector2(150, 600)
+	game.ship.velocity = Vector2.ZERO
+	var range_rocket = game.Rocket.new()
+	range_rocket.position = Vector2(350, 170)
+	range_rocket.velocity = Vector2(350, 0)
+	range_rocket.max_range = 100.0
+	range_rocket.distance_travelled = 99.0
+	game.add_child(range_rocket)
+	game.rockets.append(range_rocket)
+	game.step_rockets(0.1)
+	check(game.rockets.is_empty(), "Rocket range limit causes explosion")
+	game.reset()
+	check(game.rockets.is_empty() and game.ship.secondary.ammo == 6 and game.ship.secondary.cooldown == 0.0, "Restart clears rockets and replenishes secondary ammo")
+	check(game.status_hud.text.contains("SECONDARY: ROCKETS 6/6") and game.status_hud.text.contains("SPECIAL: RETRO"), "HUD shows rocket supply and retro input")
+
 	# Wall flash is local: exactly one section lights up, and ship stays intact.
 	game.ship.position = Vector2(60, 200)
 	game.ship.velocity = Vector2(-160, 0)
