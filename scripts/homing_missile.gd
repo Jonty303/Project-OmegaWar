@@ -11,6 +11,8 @@ const FLIGHT_RANGE := 900.0
 const FLIGHT_LIFETIME := 3.0
 const RADIUS := 4.0
 
+var is_homing := true
+
 func _init() -> void:
 	super()
 	is_homing = true
