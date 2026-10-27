@@ -4,8 +4,8 @@ extends Node2D
 const COLLISION_RADIUS := 14.0
 const DamageModel = preload("res://scripts/combat_health.gd")
 const SHORT_VISION_RANGE := 90.0
-const LONG_VISION_RANGE := 365.0
-const FRONT_VISION_HALF_ANGLE := deg_to_rad(20.0)
+const LONG_VISION_RANGE := 400.0
+const FRONT_VISION_HALF_ANGLE := deg_to_rad(25.0)
 const WEAPON_RANGE := 240.0
 const IDLE_TURRET_RATE := 0.80
 const IDLE_SWEEP := 0.65
@@ -40,6 +40,32 @@ var scan_initialized := false
 var scan_phase := 0.0
 var scan_anchor := 0.0
 var scan_turn_timer := 18.0
+var alert_flash := 0.0
+
+func alert_to_ally_hit(hit_position: Vector2, arena: Node2D, hit_self: bool = false) -> bool:
+	# A shot striking an ally is an observable event, not a report of the
+	# unseen attacker's coordinates. Use the same sensor rules and cover LOS.
+	if health <= 0.0 or (not hit_self and not has_sight_on(hit_position, arena)):
+		return false
+	alert_flash = 0.65
+	if can_see_player:
+		# Keep tracking the player if there is an actual visual contact.
+		queue_redraw()
+		return true
+	searching = true
+	looking_around = false
+	look_timer = 0.0
+	search_goal = hit_position
+	# An impact does not reveal the attacker's position or count as sighting.
+	# Do not change last_seen_position or spotted_once.
+	if not hit_self:
+		var bearing: Vector2 = position.direction_to(hit_position)
+		if not bearing.is_zero_approx():
+			search_heading = bearing
+	else:
+		search_heading = Vector2.from_angle(turret_angle)
+	queue_redraw()
+	return true
 
 func scan_gun(delta: float) -> void:
 	# Slowly sweep the forward arc, with occasional deliberate 180-degree
@@ -73,7 +99,8 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 	collision_cooldown = maxf(0.0, collision_cooldown - delta)
 	var was_visible := can_see_player
 
-	if not spotted_once or looking_around:
+	alert_flash = maxf(0.0, alert_flash - delta)
+	if (not spotted_once and not searching) or looking_around:
 		scan_gun(delta)
 	can_see_player = has_sight_on(player_position, arena)
 	if can_see_player:
@@ -190,3 +217,6 @@ func _draw() -> void:
 	var end: Vector2 = Vector2.from_angle(turret_angle) * MUZZLE_DISTANCE
 	draw_line(Vector2.ZERO, end, barrel, 2.4, true)
 	draw_circle(end, 2.3, barrel, true)
+	if alert_flash > 0.0:
+		var alpha: float = alert_flash / 0.65
+		draw_arc(Vector2.ZERO, COLLISION_RADIUS + 7.0 + (1.0 - alpha) * 6.0, 0.0, TAU, 24, Color(1.0, 0.82, 0.25, alpha), 1.5, true)

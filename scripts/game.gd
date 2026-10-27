@@ -206,6 +206,14 @@ func resolve_collisions() -> void:
 			ship.hit()
 	ship.queue_redraw()
 
+func notify_drones_of_hit(victim: Node2D) -> void:
+	# The victim always feels its own hit. Other sentries only investigate
+	# when the hit itself is within their 360-degree or forward sensor.
+	for observer in enemies:
+		if observer.is_repair_bot:
+			continue
+		observer.alert_to_ally_hit(victim.position, arena, observer == victim)
+
 func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
 	var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else Color(1.0, 0.5, 0.25)
@@ -246,6 +254,7 @@ func step_shots(delta: float) -> void:
 						if shot.position.distance_to(enemy.position) < enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
 							enemy.velocity += shot.velocity.normalized() * 30.0
 							var destroyed: bool = enemy.take_damage(1.0)
+							notify_drones_of_hit(enemy)
 							var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else Color(1.0, 0.5, 0.25)
 							spawn_debris(shot.position, tint, 0.8)
 							hit_target = true
