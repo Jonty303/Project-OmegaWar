@@ -28,6 +28,6 @@ jobs:
       - name: Import project and compile scripts
         run: ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --editor --quit
       - name: Run regression smoke test
-        run: ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --script tests/smoke.gd
+        run: timeout --signal=INT --kill-after=5s 45s ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --script tests/smoke.gd
       - name: Boot main scene for 600 frames
         run: ./Godot_v4.5.2-stable_linux.x86_64 --headless --path . --quit-after 600
