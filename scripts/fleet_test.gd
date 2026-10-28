@@ -15,7 +15,11 @@ const MAX_SPEED := 112.0
 const BRAKE := 110.0
 const TURN_SPEED := 0.55
 const TURN_ACCEL := 0.43
-const CHARGE_SECONDS := 2.4
+const CHARGE_SECONDS := 5.0
+const REVERSE_THRUST := 31.0
+const MAX_REVERSE_SPEED := 67.0
+const ASTEROID_SAFE_IMPACT := 20.0
+const TRAIL_INTERVAL := 0.065
 const BROADSIDE_INTERVAL := 0.56
 const SHELL_SPEED := 390.0
 const BEAM_EXPAND_SPEED := 1450.0
@@ -47,8 +51,10 @@ var angular_velocity := 0.0
 var thrusting := false
 var braking := false
 var charge := 0.0
-var beam_held := false
 var beam_recovery := 0.0
+var beam_charging := false
+var trail_tick := 0.0
+var ion_trails: Array[Dictionary] = []
 var beam_path: PackedVector2Array = PackedVector2Array()
 var beam_visible := 0.0
 var beam_total := 0.0
@@ -110,15 +116,16 @@ func make_inputs() -> void:
     key_action("fc_beam", KEY_SPACE)
     key_action("fc_reset", KEY_R)
     key_action("fc_cease", KEY_C)
+    key_action("fc_missile", KEY_F)
     key_action("fc_arcs", KEY_V)
     key_action("fc_zoom_out", KEY_MINUS)
     key_action("fc_zoom_in", KEY_EQUAL)
-    # Left-stick axes handle all piloting. Face buttons exclusively issue
-    # weapon orders: X port, B starboard, Y charge beam, A cease fire.
+    # Left stick is full directional propulsion/turning. Face buttons:
+    # X port, B starboard, Y beam arm/cancel, A launch aft missiles.
     pad_button("fc_port", JOY_BUTTON_X)
     pad_button("fc_starboard", JOY_BUTTON_B)
     pad_button("fc_beam", JOY_BUTTON_Y)
-    pad_button("fc_cease", JOY_BUTTON_A)
+    pad_button("fc_missile", JOY_BUTTON_A)
     # D-pad remains free for later shield/command radial menu.
     pad_axis("fc_turn_left", JOY_AXIS_LEFT_X, -1.0)
     pad_axis("fc_turn_right", JOY_AXIS_LEFT_X, 1.0)
@@ -188,7 +195,7 @@ func reset_test() -> void:
     velocity = Vector2.ZERO
     angular_velocity = 0.0
     charge = 0.0
-    beam_held = false
+    beam_charging = false
     beam_recovery = 0.0
     beam_path.clear()
     port_cooldown = 0.0
@@ -196,6 +203,8 @@ func reset_test() -> void:
     shots.clear()
     impacts.clear()
     debris.clear()
+    ion_trails.clear()
+    trail_tick = 0.0
     player_shield_flash = 0.0
     setup_targets()
     player_hull = PLAYER_MAX_HULL
@@ -248,15 +257,24 @@ func _physics_process(delta: float) -> void:
         starboard_target = -1
         announce("STARBOARD BATTERIES - " + ("OPEN FIRE" if starboard_order else "CEASE FIRE"))
 
-    var holding_beam := Input.is_action_pressed("fc_beam")
-    if not encounter_finished and holding_beam and beam_recovery <= 0.0 and beam_path.is_empty():
+    # One press arms a five-second firing order. The second press cancels.
+    if Input.is_action_just_pressed("fc_beam") and not encounter_finished:
+        if beam_charging:
+            beam_charging = false
+            charge = 0.0
+            beam_recovery = maxf(beam_recovery, 1.7)
+            announce("SPINAL BEAM - CHARGE ABORTED")
+        elif beam_recovery <= 0.0 and beam_path.is_empty():
+            beam_charging = true
+            charge = 0.0
+            announce("SPINAL BEAM - CHARGING")
+    if beam_charging and not encounter_finished:
         charge = minf(CHARGE_SECONDS, charge + delta)
-        beam_held = true
-    elif not holding_beam and beam_held:
-        if charge >= 0.28 and not encounter_finished:
-            fire_beam(charge / CHARGE_SECONDS)
-        charge = 0.0
-        beam_held = false
+        if charge >= CHARGE_SECONDS:
+            beam_charging = false
+            fire_beam(1.0)
+            charge = 0.0
+            announce("SPINAL BEAM - FIRE")
 
     if not player_destroyed:
         update_ship(delta)
@@ -274,6 +292,7 @@ func _physics_process(delta: float) -> void:
     advance_shots(delta)
     advance_beam(delta)
     recharge_shields(delta)
+    update_ion_trails(delta)
     check_encounter_result()
     for i in range(impacts.size() - 1, -1, -1):
         impacts[i]["life"] = float(impacts[i]["life"]) - delta
@@ -294,21 +313,25 @@ func update_ship(delta: float) -> void:
     ship_angle += angular_velocity * delta
 
     var throttle := Input.get_action_strength("fc_thrust")
+    var reverse_input := Input.get_action_strength("fc_brake")
     thrusting = throttle > 0.05
-    var brake_input := Input.get_action_strength("fc_brake")
-    braking = brake_input > 0.05
-    if thrusting:
-        velocity += Vector2.UP.rotated(ship_angle) * THRUST * throttle * (1.0 - progress) * delta
+    braking = reverse_input > 0.05
+    var forward := Vector2.UP.rotated(ship_angle)
+    var available_power := 1.0 - progress
+    # Opposite stick direction drives actual stern-first movement, not
+    # passive braking. A stationary ship can accelerate in reverse.
+    velocity += forward * THRUST * throttle * available_power * delta
+    velocity -= forward * REVERSE_THRUST * reverse_input * available_power * delta
     velocity += gravity_at(ship_pos) * delta
-    if braking:
-        velocity = velocity.move_toward(Vector2.ZERO, BRAKE * brake_input * delta)
-    # A charging spinal beam diverts propulsion power. At full charge,
-    # the hull comes to a complete halt until the player releases it.
     if progress > 0.0:
-        velocity = velocity.move_toward(Vector2.ZERO, (32.0 + 92.0 * progress) * delta)
+        velocity = velocity.move_toward(Vector2.ZERO, (26.0 + 83.0 * progress) * delta)
         if progress >= 0.999:
             velocity = Vector2.ZERO
     velocity = velocity.limit_length(MAX_SPEED)
+    # Limit reverse-speed component while retaining sideways inertia.
+    var back_speed := -velocity.dot(forward)
+    if back_speed > MAX_REVERSE_SPEED:
+        velocity += forward * (back_speed - MAX_REVERSE_SPEED)
     ship_pos += velocity * delta
     confine_ship()
 
@@ -336,8 +359,67 @@ func confine_ship() -> void:
         var displacement := ship_pos - centre
         if displacement.length_squared() < minimum * minimum:
             var outward := displacement.normalized() if displacement.length() > 0.1 else Vector2.UP
+            var impact_speed := maxf(0.0, -velocity.dot(outward))
             ship_pos = centre + outward * minimum
-            velocity = velocity.slide(outward) * 0.75
+            velocity = velocity.slide(outward) * 0.65
+            if impact_speed > ASTEROID_SAFE_IMPACT:
+                # Kinetic impact bypasses shields entirely.
+                var harm := clampf((impact_speed - ASTEROID_SAFE_IMPACT) * 0.115, 0.5, 10.0)
+                damage_player_hull_direct(harm, ship_pos - outward * 33.0)
+
+func damage_player_hull_direct(amount: float, at: Vector2) -> void:
+    if player_destroyed:
+        return
+    player_hull = maxf(0.0, player_hull - amount)
+    impacts.append({"pos": at, "life": 0.32, "color": PORT_COLOR})
+    create_explosion(at, 5)
+    if player_hull <= 0.0:
+        player_destroyed = true
+        encounter_finished = true
+        beam_charging = false
+        charge = 0.0
+        announce("FLAGSHIP CRUSHED - PRESS R TO RETRY")
+        create_explosion(ship_pos, 22)
+        sound_bus.play("explosion")
+
+func update_ion_trails(delta: float) -> void:
+    # World-space emitters reflect actual travel, including drifting,
+    # strafing inertia and reversing. Bounded lifetime prevents buildup.
+    for i in range(ion_trails.size() - 1, -1, -1):
+        ion_trails[i]["life"] = float(ion_trails[i]["life"]) - delta
+        if float(ion_trails[i]["life"]) <= 0.0:
+            ion_trails.remove_at(i)
+    trail_tick -= delta
+    if trail_tick > 0.0:
+        return
+    trail_tick = TRAIL_INTERVAL
+    if not player_destroyed:
+        emit_ion(ship_pos, velocity, 1.0)
+    for enemy in targets:
+        if not bool(enemy["destroyed"]):
+            emit_ion(enemy["pos"], enemy["velocity"], 0.73 if enemy["kind"] == "frigate" else 1.0)
+
+func emit_ion(pos: Vector2, actual_velocity: Vector2, strength: float) -> void:
+    var speed := actual_velocity.length()
+    if speed < 9.0:
+        return
+    var rearward := actual_velocity / speed
+    ion_trails.append({
+        "pos": pos - rearward * (22.0 * strength),
+        "vel": actual_velocity * 0.18,
+        "life": lerpf(0.28, 0.82, clampf(speed / 140.0, 0.0, 1.0)),
+        "max_life": 0.82, "speed": speed,
+        "radius": lerpf(1.5, 3.5, clampf(speed / 140.0, 0.0, 1.0)) * strength
+    })
+
+func draw_ion_trails() -> void:
+    for particle in ion_trails:
+        var ratio := clampf(float(particle["life"]) / float(particle["max_life"]), 0.0, 1.0)
+        var pos: Vector2 = particle["pos"]
+        var vel: Vector2 = particle["vel"]
+        draw_line(pos, pos - vel.normalized() * minf(float(particle["speed"]) * 0.16, 16.0),
+            Color(0.28, 0.67, 1.0, 0.26 * ratio), 3.0 * ratio, true)
+        draw_circle(pos, float(particle["radius"]) * ratio, Color(0.57, 0.88, 1.0, 0.46 * ratio))
 
 func announce(message: String) -> void:
     sound_message = message
@@ -740,6 +822,7 @@ func _draw() -> void:
     # a show_behind_parent child with independently cached draw commands.
     draw_set_transform(camera_offset, 0.0, Vector2.ONE * view_zoom)
     draw_weapon_arcs()
+    draw_ion_trails()
     draw_targets()
     draw_shots()
     draw_ship()
@@ -794,10 +877,11 @@ func draw_targets() -> void:
             HORIZONTAL_ALIGNMENT_LEFT, -1, 19, MUTED)
         var hp_ratio := float(target["hp"]) / float(target["max_hp"])
         var shield_ratio := float(target["shields"]) / float(target["max_shields"])
-        draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112, 7)), Color(0.08, 0.13, 0.18), true)
-        draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112 * hp_ratio, 7)), edge_color, true)
-        draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112, 5)), Color(0.08, 0.13, 0.18), true)
-        draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112 * shield_ratio, 5)), STARBOARD_COLOR, true)
+        # Shield health above hull health; colours remain distinct.
+        draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112, 6)), Color(0.08, 0.13, 0.18), true)
+        draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112 * shield_ratio, 6)), STARBOARD_COLOR, true)
+        draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112, 7)), Color(0.08, 0.13, 0.18), true)
+        draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112 * hp_ratio, 7)), edge_color, true)
 
 func draw_weapon_arcs() -> void:
     if not show_arcs:
