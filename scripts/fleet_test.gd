@@ -1783,6 +1783,116 @@ func draw_debris() -> void:
         color.a = float(fragment["life"]) / float(fragment["max_life"])
         draw_line(pos, pos + vel.normalized() * 9.0, color, 3.0, true)
 
+func scanner_name() -> String:
+    match scanner_level:
+        1:
+            return "IMPROVED"
+        2:
+            return "LONG RANGE"
+        3:
+            return "TACTICAL"
+        _:
+            return "BASIC"
+
+func scanner_detects(pos: Vector2) -> bool:
+    return ship_pos.distance_squared_to(pos) <= pow(float(SCANNER_RANGES[scanner_level]), 2.0)
+
+func position_on_screen(world: Vector2) -> bool:
+    var projected := camera_offset + world * view_zoom
+    return projected.x >= 42.0 and projected.x <= 1158.0 and projected.y >= 117.0 and projected.y <= 671.0
+
+func draw_scanner_arrow(world: Vector2, label: String, tint: Color) -> void:
+    # HUD edge markers appear only for off-screen contacts. Direction
+    # derives from actual world-screen projection, never the ship heading.
+    if position_on_screen(world):
+        return
+    var projected := camera_offset + world * view_zoom
+    var centre := VIEW_SIZE * 0.5
+    var direction := (projected - centre).normalized()
+    if direction.length_squared() <= 0.001:
+        return
+    var t := INF
+    if direction.x > 0.001:
+        t = minf(t, (1153.0 - centre.x) / direction.x)
+    elif direction.x < -0.001:
+        t = minf(t, (47.0 - centre.x) / direction.x)
+    if direction.y > 0.001:
+        t = minf(t, (666.0 - centre.y) / direction.y)
+    elif direction.y < -0.001:
+        t = minf(t, (121.0 - centre.y) / direction.y)
+    if t == INF:
+        return
+    var tip := centre + direction * t
+    var tail := tip - direction * 17.0
+    var perpendicular := Vector2(-direction.y, direction.x)
+    draw_colored_polygon(PackedVector2Array([tip, tail + perpendicular * 7.0, tail - perpendicular * 7.0]), tint)
+    draw_line(tail + perpendicular * 7.0, tail - perpendicular * 7.0, Color(0.95, 0.97, 1.0, 0.52), 1.0, true)
+    var text_pos := tip - direction * 29.0 + perpendicular * 8.0 + Vector2(-20, 5)
+    text_pos.x = clampf(text_pos.x, 56.0, 990.0)
+    text_pos.y = clampf(text_pos.y, 140.0, 650.0)
+    draw_string(ThemeDB.fallback_font, text_pos, label,
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 13, tint)
+
+func draw_scanner_indicators() -> void:
+    if scanner_level <= 0:
+        return
+    for enemy in targets:
+        if bool(enemy["destroyed"]):
+            continue
+        var world: Vector2 = enemy["pos"]
+        if not scanner_detects(world):
+            continue
+        var label := "CONTACT"
+        if scanner_level >= 2:
+            var classification := "FRIGATE" if enemy["kind"] == "frigate" else "CRUISER"
+            label = "%s %dm" % [classification, roundi(ship_pos.distance_to(world))]
+        draw_scanner_arrow(world, label, Color(0.43, 0.81, 1.0, 0.94))
+    if scanner_level < 3:
+        return
+    # One indicator per threat bearing, rather than 40 missile arrows.
+    # Missile contacts take priority over ordinary incoming cannon fire.
+    var sectors: Dictionary = {}
+    for missile in missiles:
+        if not bool(missile["hostile"]):
+            continue
+        var pos: Vector2 = missile["pos"]
+        if not scanner_detects(pos) or position_on_screen(pos):
+            continue
+        var angle := wrapf((pos - ship_pos).angle(), -PI, PI)
+        var sector := clampi(int(floor((angle + PI) / TAU * 12.0)), 0, 11)
+        var entry: Dictionary = sectors.get(sector, {"pos": pos, "count": 0, "kind": "missile", "distance": INF})
+        entry["count"] = int(entry["count"]) + 1
+        var distance := pos.distance_to(ship_pos)
+        if distance < float(entry["distance"]):
+            entry["pos"] = pos
+            entry["distance"] = distance
+        sectors[sector] = entry
+    for bullet in shots:
+        if not bool(bullet["hostile"]):
+            continue
+        var pos: Vector2 = bullet["pos"]
+        if not scanner_detects(pos) or position_on_screen(pos):
+            continue
+        if Vector2(bullet["vel"]).dot(ship_pos - pos) <= 0.0:
+            continue
+        var angle := wrapf((pos - ship_pos).angle(), -PI, PI)
+        var sector := clampi(int(floor((angle + PI) / TAU * 12.0)), 0, 11)
+        if sectors.has(sector) and sectors[sector]["kind"] == "missile":
+            continue
+        var entry: Dictionary = sectors.get(sector, {"pos": pos, "count": 0, "kind": "fire", "distance": INF})
+        entry["count"] = int(entry["count"]) + 1
+        var distance := pos.distance_to(ship_pos)
+        if distance < float(entry["distance"]):
+            entry["pos"] = pos
+            entry["distance"] = distance
+        sectors[sector] = entry
+    for sector in sectors:
+        var group: Dictionary = sectors[sector]
+        var is_missile: bool = group["kind"] == "missile"
+        var message := ("MISSILES x%d" if is_missile else "INCOMING x%d") % int(group["count"])
+        draw_scanner_arrow(group["pos"], message,
+            Color(1.0, 0.39, 0.29, 0.96) if is_missile else Color(1.0, 0.73, 0.35, 0.95))
+
 func draw_hud() -> void:
     var font := ThemeDB.fallback_font
     draw_rect(Rect2(0, 0, 1200, 103), Color(0.012, 0.022, 0.043, 0.91), true)
@@ -1801,6 +1911,8 @@ func draw_hud() -> void:
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, PORT_COLOR if port_order else MUTED)
     draw_string(font, Vector2(378, 87), "STBD  %s  [%02d]  %s" % [star_status, int(starboard_ammo), star_lock],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, STARBOARD_COLOR if starboard_order else MUTED)
+    draw_string(font, Vector2(700, 87), "SCAN: " + scanner_name(),
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 14, BEAM_COLOR)
 
     var charge_ratio := charge / CHARGE_SECONDS
     var bar_pos := Vector2(880, 27)
@@ -1834,7 +1946,7 @@ func draw_hud() -> void:
             HORIZONTAL_ALIGNMENT_LEFT, -1, 14, STARBOARD_COLOR)
     draw_string(font, Vector2(25, 754), "LEFT STICK: TURN / FORWARD / REVERSE     X: PORT     B: STBD     Y: BEAM ARM/CANCEL     A: 4 MISSILES",
         HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
-    draw_string(font, Vector2(25, 782), "Keyboard: WASD steer/thrust/reverse   Q/E broadsides   Space beam arm/cancel   F missiles   C cease   V arcs   R reset",
+    draw_string(font, Vector2(25, 782), "WASD fly   Q/E broadsides   Space beam   F missiles   C cease   V arcs   T scanner test   R reset",
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
     if encounter_finished:
         draw_rect(Rect2(280, 303, 640, 126), Color(0.012, 0.026, 0.042, 0.90), true)
@@ -1843,6 +1955,7 @@ func draw_hud() -> void:
             HORIZONTAL_ALIGNMENT_CENTER, 580, 25, WHITE)
         draw_string(font, Vector2(310, 399), "PRESS R TO RESTART", HORIZONTAL_ALIGNMENT_CENTER, 580, 18, MUTED)
     draw_radar()
+    draw_scanner_indicators()
 
 func draw_radar() -> void:
     var chart := Rect2(1044, 564, 128, 90)
@@ -1853,8 +1966,13 @@ func draw_radar() -> void:
         draw_circle(chart.position + normalized * chart.size, 1.1, Color(0.33, 0.41, 0.46))
     draw_circle(chart.position + GRAVITY_CENTER / FIELD.size * chart.size, 2.0, Color(0.55, 0.42, 0.85))
     for target in targets:
-        if not bool(target["destroyed"]):
+        if not bool(target["destroyed"]) and scanner_detects(target["pos"]):
             draw_circle(chart.position + Vector2(target["pos"]) / FIELD.size * chart.size, 2.4, Color(0.98, 0.51, 0.43))
+    if scanner_level >= 3:
+        for missile in missiles:
+            if bool(missile["hostile"]) and scanner_detects(missile["pos"]):
+                draw_circle(chart.position + Vector2(missile["pos"]) / FIELD.size * chart.size,
+                    1.5, Color(1.0, 0.34, 0.22))
     draw_circle(chart.position + ship_pos / FIELD.size * chart.size, 3.1, Color(0.52, 0.96, 1.0))
     var font := ThemeDB.fallback_font
     draw_string(font, chart.position + Vector2(1, -7), "THEATRE OVERVIEW", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
