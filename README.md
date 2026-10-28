@@ -11,14 +11,26 @@ in `tests/smoke.gd`.
   gravity field. Normal wall ricochets and projectile physics remain active.
 - Each test wave contains **two or three ordinary Local Drones**. Difficulty
   escalation and between-wave upgrades are suspended in the flight lab.
-- The right-hand **live loadout panel** switches between Light, Medium and
-  Heavy hulls and Standard, High-Thrust, Vector Drive and Overdrive engines.
-- A **0.50–3.00× thrust/braking test multiplier** is available, with hard
-  engineering ceilings of **3× classic acceleration, braking and speed**.
-- The bottom HUD shows current velocity, top speed, thrust, braking,
-  rotation rate, effective mass, heat, hull health and rockets.
+- The right-hand **live loadout panel** offers only three chassis:
+  **Light**, **Medium** and **Heavy**. Engine tuning is intentionally deferred;
+  all ships use the **Standard** engine.
+- Choose between the standard **Pulse Laser** (hold to fire repeatedly,
+  ricocheting off walls) and the experimental **Charge Beam**
+  (**hold primary fire to charge; release to fire once**).
+- The Charge Beam stores energy for up to **1.5 seconds**. A valid charge
+  of at least 0.1 seconds produces a ray with charge-dependent range
+  (**180–850 units**) and damage (**0.75–4.25 HP**). Charging longer also
+  increases its visual thickness and heat generated on discharge.
+- The beam **pierces aligned enemies** but stops at the **first wall** rather
+  than reflecting or spawning a bouncing projectile. A future upgrade might
+  allow controlled beam ricochets; that mechanic is **not yet enabled**.
+- Discharging incurs a **0.55-second cooldown**; switching weapons
+  cancels stored charge. Its discharge and ship-capacitor glow are visible,
+  with a deliberately restrained accompanying sound.
+- The bottom HUD shows flight diagnostics and, while the beam is equipped,
+  current charge, prospective range/damage and cooldown.
 - **Reset Position + Velocity** returns the ship to the starting point without
-  restarting its wave or changing the selected hull and engine.
+  restarting its wave or changing the selected chassis and primary weapon.
 - Ship mass affects ramming impulses and rocket knockback; the selected
   hull also changes sprite size and collision footprint. There is no passive
   velocity drag.
