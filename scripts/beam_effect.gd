@@ -1,8 +1,8 @@
 extends Node2D
 
-# Short-lived, world-space drawing of an instantaneous hitscan beam.
-# It is entirely visual; damage is applied once on release by the game.
-const DURATION := 0.23
+# Lightning Gun discharge: a brief, instantaneous zigzag lightning flash.
+# Gameplay hit testing is a single wall-clipped ray, with NO reflection.
+const DURATION := 0.18
 var end_offset := Vector2.ZERO
 var remaining := DURATION
 var beam_width := 4.0
@@ -23,7 +23,23 @@ func advance(delta: float) -> bool:
 
 func _draw() -> void:
 	var fade := clampf(remaining / DURATION, 0.0, 1.0)
-	draw_line(Vector2.ZERO, end_offset, Color(0.25, 0.65, 1.0, 0.20 * fade), beam_width + 13.0, true)
-	draw_line(Vector2.ZERO, end_offset, Color(0.37, 0.79, 1.0, 0.72 * fade), beam_width + 3.0, true)
-	draw_line(Vector2.ZERO, end_offset, Color(0.95, 0.99, 1.0, fade), maxf(1.5, beam_width * 0.34), true)
-	draw_circle(end_offset, 3.0 + power * 3.5, Color(0.65, 0.90, 1.0, 0.8 * fade), true)
+	var length: float = end_offset.length()
+	if length <= 0.5:
+		return
+	var axis: Vector2 = end_offset / length
+	var side := Vector2(-axis.y, axis.x)
+	var vertices := PackedVector2Array()
+	var parts: int = maxi(5, int(ceil(length / 24.0)))
+	var time_shift: float = floorf(remaining * 46.0)
+	for i in range(parts + 1):
+		var t: float = float(i) / float(parts)
+		var point := end_offset * t
+		if i > 0 and i < parts:
+			# Sharp independent zigzags, rather than a smooth laser line.
+			var jitter: float = sin(float(i) * 17.13 + time_shift * 11.1)
+			point += side * jitter * (7.0 + power * 9.0)
+		vertices.append(point)
+	draw_polyline(vertices, Color(0.19, 0.53, 1.0, 0.23 * fade), beam_width + 12.0, true)
+	draw_polyline(vertices, Color(0.48, 0.79, 1.0, 0.74 * fade), beam_width + 3.0, true)
+	draw_polyline(vertices, Color(0.98, 1.0, 1.0, fade), maxf(1.5, beam_width * 0.32), true)
+	draw_circle(end_offset, 3.0 + power * 3.0, Color(0.67, 0.92, 1.0, fade), true)
