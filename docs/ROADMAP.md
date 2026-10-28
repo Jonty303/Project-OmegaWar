@@ -4,6 +4,9 @@
 
 This **classic-baseline** branch is focused on game feel:
 - one arena and central obstruction, plus two heavy movable asteroids as cover;
+- one non-solid localized gravity well with capped 118-unit/s² pull, which
+  affects ship/drone movement, laser shots, rockets, homing missiles and
+  (more weakly) heavy asteroids;
 - 145-unit/s² acceleration, 320-unit/s maximum ship speed and momentum
   without passive decay; 98.5% wall/core bounce restitution (but independent
   asteroid/ship impact physics);
@@ -46,13 +49,17 @@ This **classic-baseline** branch is focused on game feel:
   restart key, score and five-second wave restarts;
 - between-wave 3-card upgrade selection with stacking movement, hull, shield,
   Pulse Laser and rocket effects, including eight-direction kill cascade;
+- test-only automatic, independent per-wave random enemy escalation:
+  +1 Local Drone, +5% enemy shot/missile damage, +5% projectile speed,
+  or +0.5 hull for every enemy type;
 - wave-completion resupply of 25% maximum hull, full shields and 50% total
   rocket capacity;
 - procedurally synthesized, deliberately quiet shot, missile, explosion
   and low-volume throttled rebound audio cues.
 
 There are still **no collectible power-ups, boost equipment, gravity-well
-enemies or changing arenas**; upgrades are awarded on an inter-wave screen.
+enemies or changing arenas**; the one small static gravity anomaly is a
+test mechanic, and upgrades are awarded on an inter-wave screen.
 
 ## Once movement and combat feel right
 
@@ -81,6 +88,7 @@ obstacles.
    Drones avoid each other and never occupy the same footprint;
    Asteroid impacts never damage ships and persistent thrust slowly moves them.
 5. Controller A selects focused menu options, menu-only restart, pause
-   and wave timing are reliable;
+   and wave timing are reliable; field gravity remains escapable and bends
+   shots and guided missiles without overriding launch inertia rules;
    missile contact with walls, core, asteroids and all ships detonates
    instead of bouncing.

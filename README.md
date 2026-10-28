@@ -27,11 +27,12 @@ Drones, one long-range missile drone and one Repair Bot**.
 | Enter / Space | A (bottom face button) | Select focused menu option |
 | Pause menu: Reset Run | Pause menu: Reset Run | Restart from the menu only |
 
-The ship accelerates gently (145 units/s²) and **never slows down by itself**:
+The ship accelerates gently (145 units/s²) and **has no passive drag**:
 velocity is retained until you thrust in another direction, apply the brakes
 or hit a solid object. An explicit **320-unit/s ship maximum** prevents
 unbounded thrust acceleration; this cap does not introduce passive drag
-at any lower speed. Outer walls and the central core now retain **98.5% of the
+at any lower speed. A localized gravitational anomaly can bend
+its trajectory without introducing friction. Outer walls and the central core retain **98.5% of the
 normal component of impact speed** on a bounce. Momentum exchange with
 other ships and heavy asteroids remains governed by their own collision rules.
 
@@ -143,6 +144,44 @@ rocket/missile launches, explosions and rebounds. The **rebound tick is
 deliberately much quieter** and has a minimum spacing between repeats to
 avoid a rapid, distracting percussion effect during ricochets. Effects
 are synthesized in Godot; no external audio assets are required.
+
+## Gravitational anomaly
+
+A **small dark gravity well** appears near **(846, 613)** in the lower-right
+open arena. It is not a solid obstacle. Its faint violet/blue accretion rings
+indicate a soft circular gravitational field extending **270 units**.
+The pull strengthens smoothly toward the centre but never exceeds
+**118 units/s²**, below the starter ship's **145 units/s² thrust**.
+Holding thrust outward therefore still allows escape. The pull falls to
+zero outside the field and is softened at the centre, avoiding unstable
+high-speed slingshots through an infinite-force singularity.
+
+Gravity accelerates **the player, all drone variants, Pulse Laser shots,
+unguided rockets and homing missiles**, so even an unguided shot can curve
+after launch. It also applies a reduced pull to very heavy asteroids.
+Projectile launch direction and speed still ignore the firing craft's
+velocity; the gravity effect is applied **after launch** during flight.
+The field itself does not inflict contact damage.
+
+## Test-only wave difficulty escalation
+
+At the end of each completed wave, alongside the normal three-card player
+upgrade, the game **randomly applies exactly one** of four enemy difficulty
+changes for the next wave. The change is shown on the upgrade screen:
+
+| Automatic enemy change | Effect |
+| --- | --- |
+| More enemies | +1 ordinary Local Drone per wave |
+| Higher weapon damage | +5% to enemy bullet and homing missile damage |
+| Faster projectiles | +5% to enemy bullets and homing missiles |
+| More enemy health | +0.5 maximum and starting hull to **every** enemy type |
+
+These four counters **accumulate independently**: successive damage or
+speed bonuses multiply by 1.05, while extra enemies and hull add to each
+subsequent wave. A new run resets all four counters. This is intentionally
+a simple, randomized stress-testing system, **not a finalized progression
+or balance design**. The HUD shows the total number of accumulated enemy
+difficulty increments.
 
 ## Drone spacing and collision avoidance
 
@@ -402,10 +441,14 @@ Manual playtest:
 - Check the bottom HUD updates with speed, thrust percentage, health,
   shields and heat, plus live rocket ammunition and cooldown.
 - Destroy a drone and verify its debris burst.
-- Clear a wave: confirm the three-card bonus screen freezes play, supports
-  controller A selection and retains your chosen upgrade across subsequent
-  waves. Hull should regain 25% of its maximum, shields fully restore and
-  rockets recover three rounds, capped at six.
+- Fly near the lower-right gravity well and test coasting, curved Pulse
+  shots, unguided rockets and homing missiles; hold thrust outward to
+  confirm you can escape, even close to its centre.
+- Clear a wave: confirm the three-card bonus screen displays one random
+  enemy escalation for the next wave, freezes play, supports controller A
+  selection and retains your chosen upgrade. Hull should regain 25% of
+  maximum, shields fully restore and rockets recover three rounds, capped
+  at six. Repeated waves should stack the enemy difficulty modifiers.
 - Check that a Repair Bot follows an injured drone which moves away, then
   heals as soon as it can establish tether contact.
 - Shoot one enemy while another drone sees the impact: the witness should
