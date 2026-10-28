@@ -191,7 +191,7 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 
 	# Survival takes priority over sentry/attack/search destinations.
 	# Even idle sentries actively flee the well's dangerous inner region.
-	escaping_gravity = position.distance_to(arena.gravity_well.position) < GRAVITY_AVOID_RADIUS
+	escaping_gravity = not arena.flight_test_mode and position.distance_to(arena.gravity_well.position) < GRAVITY_AVOID_RADIUS
 	if escaping_gravity:
 		destination = arena.gravity_escape_waypoint(position, COLLISION_RADIUS, GRAVITY_AVOID_RADIUS + 35.0)
 		should_move = position.distance_to(destination) > 5.0
