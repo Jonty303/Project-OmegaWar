@@ -6,6 +6,7 @@ const DISSOLVE_SECONDS := 0.34
 
 var velocity := Vector2.ZERO
 var hit_radius := HIT_RADIUS
+var cascade_shard := false
 var is_rocket := false
 var impact_pending := false
 var damage := 1.0
@@ -47,4 +48,5 @@ func _draw() -> void:
 			var color := Color(base.r, base.g, base.b, (1.0 - progress) * 0.85)
 			draw_line(centre - visual_heading * (2.0 - progress), centre + visual_heading * (2.0 - progress), color, 1.6, true)
 		return
-	draw_line(-visual_heading * 7.0, visual_heading * 2.5, base, 2.0, true)
+	var thickness: float = maxf(1.3, hit_radius * 0.66)
+	draw_line(-visual_heading * (hit_radius + 4.0), visual_heading * (hit_radius * 0.80), base, thickness, true)

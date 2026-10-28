@@ -44,15 +44,20 @@ var scan_anchor := 0.0
 var scan_turn_timer := 18.0
 var alert_flash := 0.0
 
-func alert_to_ally_hit(hit_position: Vector2, arena: Node2D, hit_self: bool = false) -> bool:
+func alert_to_ally_hit(hit_position: Vector2, arena: Node2D, hit_self: bool = false, incoming_velocity: Vector2 = Vector2.ZERO) -> bool:
 	# A shot striking an ally is an observable event, not a report of the
 	# unseen attacker's coordinates. Use the same sensor rules and cover LOS.
 	if health <= 0.0 or (not hit_self and not has_sight_on(hit_position, arena)):
 		return false
 	alert_flash = 0.65
 	if can_see_player:
-		# Keep tracking the player if there is an actual visual contact.
+		# Direct sight remains stronger evidence than an incoming shot.
 		queue_redraw()
+		return true
+	if not hit_self and not incoming_velocity.is_zero_approx():
+		# Witnesses observe the damaged ally AND the direction the shot
+		# came from. Point toward that bearing, not at the wounded ally.
+		react_to_incoming_shot(incoming_velocity, arena)
 		return true
 	searching = true
 	looking_around = false

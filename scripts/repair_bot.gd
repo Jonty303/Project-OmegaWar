@@ -101,6 +101,20 @@ func observe_incoming_shot(shot_position: Vector2, shot_velocity: Vector2, allie
 		return false
 	return alert_incoming_fire(direction, allies)
 
+func healing_waypoint(patient: Node2D, arena: Node2D) -> Vector2:
+	# Track the currently injured ally every frame; it may be moving.
+	# Approach a reachable standoff position rather than the patient's
+	# occupied collision circle. This prevents blocked-overlap stalls.
+	var to_patient: Vector2 = patient.position - position
+	var distance: float = to_patient.length()
+	if distance < 0.01:
+		return position
+	var minimum: float = COLLISION_RADIUS + patient.COLLISION_RADIUS + arena.DRONE_GAP + 8.0
+	var approach: Vector2 = patient.position - to_patient.normalized() * minimum
+	if arena.blocked(approach, COLLISION_RADIUS):
+		approach = patient.position
+	return arena.approach_waypoint(position, approach, COLLISION_RADIUS)
+
 func step_support(delta: float, allies: Array[Node2D], arena: Node2D) -> void:
 	collision_cooldown = maxf(0.0, collision_cooldown - delta)
 	tether_phase += delta * 23.0
@@ -136,8 +150,8 @@ func step_support(delta: float, allies: Array[Node2D], arena: Node2D) -> void:
 			tether_target = patient
 			patient.receive_healing(HULL_REPAIR_RATE * delta, SHIELD_REPAIR_RATE * delta)
 		else:
-			var waypoint: Vector2 = arena.approach_waypoint(position, patient.position, COLLISION_RADIUS)
-			if position.distance_to(waypoint) > 8.0:
+			var waypoint: Vector2 = healing_waypoint(patient, arena)
+			if position.distance_to(waypoint) > 5.0:
 				destination_velocity = position.direction_to(waypoint) * MOVE_SPEED
 	destination_velocity = arena.avoid_drones(self, destination_velocity)
 	velocity = velocity.move_toward(destination_velocity, ACCELERATION * delta)

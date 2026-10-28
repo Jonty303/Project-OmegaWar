@@ -10,6 +10,7 @@ const DamageModel = preload("res://scripts/combat_health.gd")
 
 var weapon := Weapon.new()
 var secondary := RocketLauncher.new()
+var thrust_multiplier := 1.0
 var velocity := Vector2.ZERO
 var hull := 3.0
 var max_hull := 3.0
@@ -29,7 +30,7 @@ func step(delta: float, arena: Node2D) -> void:
 	thrusting = thrust_strength > 0.02
 	# Nothing reduces momentum passively. Thrust, brake and impacts are forces.
 	if thrusting:
-		velocity += Vector2.UP.rotated(rotation) * THRUST_ACCELERATION * thrust_strength * delta
+		velocity += Vector2.UP.rotated(rotation) * THRUST_ACCELERATION * thrust_multiplier * thrust_strength * delta
 	# Front-mounted retro thrusters arrest momentum without reversing it.
 	# The old brake inputs remain aliases; Special is the explicit control.
 	var retro_strength: float = maxf(Input.get_action_strength("special"), Input.get_action_strength("brake"))

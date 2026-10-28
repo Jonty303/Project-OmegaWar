@@ -14,6 +14,7 @@ const HEAT_PER_SHOT := 10.0
 const MUZZLE_OFFSET := 23.0
 
 var ammo := MAX_AMMO
+var blast_radius := BLAST_RADIUS
 var cooldown := 0.0
 
 func tick(delta: float) -> void:
@@ -30,6 +31,6 @@ func fire(origin: Vector2, heading: Vector2) -> Dictionary:
 		"velocity": direction * SHOT_SPEED,
 		"max_range": MAX_RANGE,
 		"damage": DAMAGE,
-		"blast_radius": BLAST_RADIUS,
+		"blast_radius": blast_radius,
 		"blast_impulse": BLAST_IMPULSE
 	}
