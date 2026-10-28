@@ -2,7 +2,7 @@
 config_version=5
 
 [application]
-config/name="Omega War: Fleet Command Test"
+config/name="Omega War: First Contact"
 run/main_scene="res://scenes/fleet_test.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 
