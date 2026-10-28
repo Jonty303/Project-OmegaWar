@@ -165,6 +165,8 @@ func make_inputs() -> void:
     pad_button("fc_starboard", JOY_BUTTON_B)
     pad_button("fc_beam", JOY_BUTTON_Y)
     pad_button("fc_missile", JOY_BUTTON_A)
+    # Temporary scanner-tier test on R3; the D-pad stays reserved.
+    pad_button("fc_scanner", JOY_BUTTON_RIGHT_STICK)
     # D-pad remains free for later shield/command radial menu.
     pad_axis("fc_turn_left", JOY_AXIS_LEFT_X, -1.0)
     pad_axis("fc_turn_right", JOY_AXIS_LEFT_X, 1.0)
@@ -1912,7 +1914,7 @@ func draw_hud() -> void:
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, PORT_COLOR if port_order else MUTED)
     draw_string(font, Vector2(378, 87), "STBD  %s  [%02d]  %s" % [star_status, int(starboard_ammo), star_lock],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, STARBOARD_COLOR if starboard_order else MUTED)
-    draw_string(font, Vector2(700, 87), "SCAN: " + scanner_name(),
+    draw_string(font, Vector2(700, 87), "SCAN: " + scanner_name() + " [R3/T]",
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, BEAM_COLOR)
 
     var charge_ratio := charge / CHARGE_SECONDS
