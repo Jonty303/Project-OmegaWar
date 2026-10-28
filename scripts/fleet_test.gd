@@ -416,7 +416,7 @@ func damage_player_hull_direct(amount: float, at: Vector2) -> void:
         return
     player_hull = maxf(0.0, player_hull - amount)
     impacts.append({"pos": at, "life": 0.32, "color": PORT_COLOR})
-    create_explosion(at, 5)
+    spawn_hull_debris(at, ship_pos, velocity, amount)
     if player_hull <= 0.0:
         player_destroyed = true
         encounter_finished = true
@@ -656,7 +656,9 @@ func advance_enemies(delta: float) -> void:
                     var collision_harm := clampf((kinetic_impact - ASTEROID_SAFE_IMPACT) * 0.11, 0.5, 12.0)
                     enemy["hp"] = maxf(0.0, float(enemy["hp"]) - collision_harm)
                     enemy["flash"] = 0.3
-                    impacts.append({"pos": future - outward * float(enemy["radius"]), "life": 0.32, "color": PORT_COLOR})
+                    var rock_hit := future - outward * float(enemy["radius"])
+                    impacts.append({"pos": rock_hit, "life": 0.32, "color": PORT_COLOR})
+                    spawn_hull_debris(rock_hit, future, vel, collision_harm)
                     if float(enemy["hp"]) <= 0.0 and not bool(enemy["destroyed"]):
                         enemy["destroyed"] = true
                         create_explosion(future, 15)
@@ -974,14 +976,36 @@ func damage_player(amount: float, at: Vector2) -> void:
     player_shields -= absorbed
     if absorbed > 0.0:
         player_shield_flash = 0.22
-    player_hull = maxf(0.0, player_hull - (amount - absorbed))
-    impacts.append({"pos": at, "life": 0.32, "color": STARBOARD_COLOR if absorbed > 0.0 else PORT_COLOR})
+    var hull_damage := maxf(0.0, amount - absorbed)
+    player_hull = maxf(0.0, player_hull - hull_damage)
+    if hull_damage > 0.0:
+        spawn_hull_debris(at, ship_pos, velocity, hull_damage)
+    impacts.append({"pos": at, "life": 0.32, "color": STARBOARD_COLOR if hull_damage <= 0.0 else PORT_COLOR})
     if player_hull <= 0.0:
         player_destroyed = true
         encounter_finished = true
         announce("FLAGSHIP LOST - PRESS R TO RETRY")
         create_explosion(ship_pos, 18)
         sound_bus.play("explosion")
+
+# Shared hull-impact effect for ALL present and future weapon types.
+# Bullet, missile, bomb and any other projectile calls its ship's damage
+# method. Only damage which actually reaches the hull creates metal fragments.
+func spawn_hull_debris(at: Vector2, hull_centre: Vector2, inherited_velocity: Vector2, damage: float) -> void:
+    var outward := (at - hull_centre).normalized()
+    if outward.length_squared() < 0.01:
+        outward = Vector2.from_angle(randf_range(0.0, TAU))
+    var count := clampi(3 + roundi(damage * 0.9), 3, 11)
+    for n in range(count):
+        var scatter := outward.rotated(randf_range(-0.95, 0.95))
+        var burst_speed := randf_range(38.0, 105.0) + minf(damage * 4.5, 100.0)
+        var lifetime := randf_range(0.55, 1.12)
+        debris.append({
+            "pos": at + scatter * randf_range(1.0, 7.0),
+            "vel": inherited_velocity * 0.28 + scatter * burst_speed,
+            "life": lifetime, "max_life": lifetime,
+            "color": Color(1.0, 0.54, 0.23) if n % 4 == 0 else Color(0.69, 0.78, 0.82)
+        })
 
 func create_explosion(at: Vector2, count: int) -> void:
     for n in range(count):
@@ -1297,10 +1321,13 @@ func damage_target(index: int, amount: float, at: Vector2) -> void:
     var enemy: Dictionary = targets[index]
     var absorbed := minf(float(enemy["shields"]), amount)
     enemy["shields"] = float(enemy["shields"]) - absorbed
-    enemy["hp"] = maxf(0.0, float(enemy["hp"]) - (amount - absorbed))
+    var hull_damage := maxf(0.0, amount - absorbed)
+    enemy["hp"] = maxf(0.0, float(enemy["hp"]) - hull_damage)
+    if hull_damage > 0.0:
+        spawn_hull_debris(at, enemy["pos"], enemy["velocity"], hull_damage)
     enemy["shield_delay"] = SHIELD_REGEN_DELAY
     enemy["flash"] = 0.20
-    impacts.append({"pos": at, "life": 0.32, "color": BEAM_COLOR if absorbed > 0.0 else PORT_COLOR})
+    impacts.append({"pos": at, "life": 0.32, "color": BEAM_COLOR if hull_damage <= 0.0 else PORT_COLOR})
     if float(enemy["hp"]) <= 0.0:
         enemy["destroyed"] = true
         create_explosion(enemy["pos"], 14)
