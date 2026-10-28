@@ -1,17 +1,19 @@
 # OmegaWar — classic baseline
 
 A **Godot 4.5.2** vector-style arcade shooter inspired by the momentum combat
-of Omega Race. This branch omits power-ups, boosts, rapid-fire modifiers and gravity wells,
-and concentrates on small-scale combat, support units and momentum physics.
+of Omega Race. This branch now adds a small between-wave upgrade progression to its
+inertial combat, support units and collision physics. Gravity wells and
+pickup-based power-ups are still deferred.
 Personal shields are now a separate, finite health pool (not a pickup).
 
 ## Getting started
 
 Open `project.godot` in Godot 4.5.2 and press **F5**. The ship starts with
 three hull points, two shield points and two seconds of spawn protection.
-The first wave appears after one second; subsequent waves appear **five seconds
-after the last enemy dies**, with **two to three ordinary Local Drones,
-one long-range missile drone and one Repair Bot**.
+The first wave appears after one second; at the end of each cleared wave
+you choose one of three ship upgrades, then the next wave arrives after a
+**five-second** countdown. Each wave contains **two to three ordinary Local
+Drones, one long-range missile drone and one Repair Bot**.
 
 | Keyboard | Joypad | Action |
 | --- | --- | --- |
@@ -60,9 +62,10 @@ Local Drones that have the impact within their own 90-unit all-around sensor
 or 400-unit forward cone, and an unobstructed view, become alert. The struck Local Drone notices its own hit and **turns toward the
 direction from which the bullet arrived**, investigating along that firing
 line and searching for a target. The turret rotates rather than snapping,
-and cover limits its travel. Witnesses show an amber ring and investigate
-the hit location. None of these reactions reveal an unseen shooter's
-exact position or allow blind firing. The central core and
+and cover limits its travel. Witnesses show an amber ring, turn their guns toward the **incoming shot
+direction**, and investigate backward along its trajectory, rather than
+looking directly at the damaged ally. None of these reactions reveal an
+unseen shooter's exact position or allow blind firing. The central core and
 asteroids can hide an impact from another sentry.
 
 Shots from either side **ricochet off arena
@@ -98,6 +101,48 @@ velocity, including immediately after ricochets. Bullets can travel up to
 1,150 world units, bounce up to four times, and live for at most 3.2 seconds.
 When they reach a limit, they stop and disintegrate into short-lived,
 fading fragments for 0.34 seconds rather than suddenly disappearing.
+
+## Between-wave upgrades and resupply
+
+Clearing an entire wave pauses the action at a **three-choice upgrade
+screen**. Select one card using the mouse, keyboard navigation, or
+**D-pad / left stick + controller A**. The screen does not advance until
+one of the three offers is selected; only then does the five-second next
+wave countdown start.
+
+Every completed wave also restores **25% of maximum hull health** (capped
+at the current maximum), refills **100% of shields**, and replenishes
+**50% of total rocket capacity** (three of the starter six), never exceeding
+the currently equipped maximum. These resources carry across waves.
+
+Upgrades accumulate across the run, and an upgrade can be selected again
+on later screens:
+
+| Upgrade | Effect per selection |
+| --- | --- |
+| Overcharged Thrusters | +15% thrust acceleration |
+| Rapid Pulse Capacitors | Pulse Laser shoots 10% faster |
+| Focused Pulse Emitters | +0.25 Pulse Laser damage |
+| Reinforced Structure | +1 maximum and current hull |
+| Expanded Shield Matrix | +1 maximum and current shields |
+| Wider Pulse Bolts | +0.75 radius for Pulse Laser shots |
+| Split Pulse Array | +1 projectile fired per Pulse Laser volley |
+| Warhead Expansion | +20% secondary rocket blast radius |
+| Pulse Shrapnel Cascade | +6 percentage points chance that an enemy destroyed by a Pulse Laser releases eight short-range radial pulses |
+
+**Weapon-specific upgrades appear only when the matching weapon is
+equipped.** The starting ship has both Pulse Laser and Unguided Rockets,
+so the full initial deck is available. The cascade shards travel in eight
+45-degree directions, deal 0.4 damage each, reach 175 units, and cannot
+trigger further cascades.
+
+## Quiet arcade sound effects
+
+Short, low-volume procedural sound effects accompany Pulse Laser shots,
+rocket/missile launches, explosions and rebounds. The **rebound tick is
+deliberately much quieter** and has a minimum spacing between repeats to
+avoid a rapid, distracting percussion effect during ricochets. Effects
+are synthesized in Godot; no external audio assets are required.
 
 ## Drone spacing and collision avoidance
 
@@ -181,8 +226,10 @@ restores **0.9 hull HP and 0.75 shield points per second**, up to the ally's
 normal maximum. The bot can repair other enemies (including allied Repair Bots),
 but never the player or itself. It chooses the nearest wounded ally
 **only while unassigned**. Once assigned, it stays focused on that patient
-even if another drone is injured closer by. It picks a new patient only
-once the current one is fully healed, destroyed or removed.
+even if another drone is injured closer by. It continually tracks and
+**follows its moving patient** until in clear tether range and keeps
+healing whenever it is not actively fleeing incoming fire. It picks a
+new patient only once the current one is fully healed, destroyed or removed.
 
 **Shields are a separate health pool**: attacks must remove all current shields
 before hull/structure HP can be reduced. Excess damage from a single hit
@@ -230,8 +277,8 @@ rocket explosions have **no friendly-fire exemption**, including short-range
 and bounced-rocket explosions. Normal player invulnerability intervals still
 apply, as for other attacks. The blast appears as an expanding amber shock
 ring and debris, and can damage multiple enemies simultaneously. Rocket
-launch generates 10 heat. Rocket ammo is replenished on restart, not on
-each wave.
+launch generates 10 heat. Rocket ammo is replenished by three after
+every completed wave, as well as being fully restored on restart.
 
 ## Two heavy asteroids
 
@@ -355,8 +402,21 @@ Manual playtest:
 - Check the bottom HUD updates with speed, thrust percentage, health,
   shields and heat, plus live rocket ammunition and cooldown.
 - Destroy a drone and verify its debris burst.
-- Clear a wave, pause during the countdown, then watch 2–3 Local Drones,
-  one long-range missile drone and one Repair Bot return.
+- Clear a wave: confirm the three-card bonus screen freezes play, supports
+  controller A selection and retains your chosen upgrade across subsequent
+  waves. Hull should regain 25% of its maximum, shields fully restore and
+  rockets recover three rounds, capped at six.
+- Check that a Repair Bot follows an injured drone which moves away, then
+  heals as soon as it can establish tether contact.
+- Shoot one enemy while another drone sees the impact: the witness should
+  turn down the incoming firing line, not stare at the damaged ally.
+- Test Pulse Shrapnel Cascade: after selecting it, some Pulse Laser kills
+  should launch eight short-range projectiles. More selections make it
+  more likely.
+- Listen for soft shot, missile and explosion effects and a very quiet
+  rebound sound with no repetitive ear-fatiguing effect.
+- After selecting an upgrade, watch 2–3 Local Drones, one long-range
+  missile drone and one Repair Bot return after five seconds.
 
 All visuals are procedural line art; no external sprites or plugins are needed.
 There is no audio, settings or save system yet. `docs/ROADMAP.md` retains the

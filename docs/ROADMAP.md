@@ -1,6 +1,6 @@
 # OmegaWar roadmap
 
-## Current branch: intentionally simple
+## Current branch: compact wave roguelite
 
 This **classic-baseline** branch is focused on game feel:
 - one arena and central obstruction, plus two heavy movable asteroids as cover;
@@ -11,8 +11,8 @@ This **classic-baseline** branch is focused on game feel:
   60-degree barrel-facing cone, 240-unit weapon reach, 0.85-radian idle
   and 1.55-radian search turret sweeps,
   rare about-faces, 7.5-radian/s tracking, last-sighting and incoming-shot
-  bearing investigation, and witnessing ally hits only within their real
-  sensors, subject to cover occlusion;
+  bearing investigation, and witnesses looking back toward incoming fire
+  rather than at damaged allies, subject to cover occlusion;
 - one indigo long-range Local Drone per wave, maintaining 275–365 units
   from the player and launching 375-unit/s guided missiles from 275–395
   units when in sight. Missiles have a 780-unit maximum flight path,
@@ -21,7 +21,8 @@ This **classic-baseline** branch is focused on game feel:
 - shared all-drone collision clearance, 12-unit preferred personal space,
   and separation of forced overlaps caused by blasts or obstacle shoves;
 - one unarmed Repair Bot per wave with global awareness of damaged allies,
-  a locked patient until fully healed or destroyed, 105-unit/s movement
+  persistent tracking of an injured moving patient until healed or destroyed,
+  105-unit/s movement
   and a 170-unit electrical healing tether. Repair Bots flee toward armed
   allies when shot at and self-destruct if only support units remain;
 - separate hull HP and shield HP, shield-first damage, shield-above-hull mini-bars,
@@ -42,10 +43,16 @@ This **classic-baseline** branch is focused on game feel:
   against asteroids and apply a small kinetic push;
 - keyboard and controller inputs, a Resume / Reset Run pause menu with
   D-pad/stick navigation and controller A selection instead of a global
-  restart key, score and five-second wave restarts.
+  restart key, score and five-second wave restarts;
+- between-wave 3-card upgrade selection with stacking movement, hull, shield,
+  Pulse Laser and rocket effects, including eight-direction kill cascade;
+- wave-completion resupply of 25% maximum hull, full shields and 50% total
+  rocket capacity;
+- procedurally synthesized, deliberately quiet shot, missile, explosion
+  and low-volume throttled rebound audio cues.
 
-There are intentionally **no power-ups, boost equipment, gravity-well enemies
-or changing arenas** in this baseline beyond the new basic rocket secondary.
+There are still **no collectible power-ups, boost equipment, gravity-well
+enemies or changing arenas**; upgrades are awarded on an inter-wave screen.
 
 ## Once movement and combat feel right
 
