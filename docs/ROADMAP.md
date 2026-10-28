@@ -1,49 +1,99 @@
 # OmegaWar roadmap
 
-## Current slice
-One rectangular arena with a central obstruction; momentum movement, brake,
-temporary afterburner, pulse shots, chasing drones, gravity wells, shield and
-rapid-fire pickups, score, escalating waves, pause, death, and restart.
-Gravity currently affects the player only. Enemies can overlap one another.
-All art is original procedural linework.
+## Current branch: compact wave roguelite
 
-## Weapon extension seam
-`weapon.gd` owns cooldown and returns shot descriptors; `game.gd` spawns them.
-Before adding weapon types, promote these descriptors to a typed ShotSpec resource
-(damage, team, lifetime, speed, collision radius, scene) and move collision and
-damage dispatch into a combat service. Keep movement independent of equipment.
-Use a shared damage receiver contract and explicit owner/team filtering to avoid
-self-hits. Pool projectiles only after measuring performance.
+This **classic-baseline** branch is focused on game feel:
+- one arena and central obstruction, plus two heavy movable asteroids as cover;
+- one non-solid localized gravity well with capped 118-unit/s² **ship**
+  pull, scaled 8× for laser bullets, 9× for unguided rockets and 14× for
+  homing missiles; heavy asteroids feel reduced pull. Homing guidance
+  retains gravitational momentum instead of cancelling it every frame;
+- Local Drones and missile variants actively avoid the well within
+  190 units, temporarily using 195-unit/s² escape acceleration and a
+  95-unit/s escape target speed to overcome attraction;
+- 145-unit/s² acceleration, 320-unit/s maximum ship speed and momentum
+  without passive decay; 98.5% wall/core bounce restitution (but independent
+  asteroid/ship impact physics);
+- two to three Local Drones: 90-unit omnidirectional vision and a 400-unit,
+  60-degree barrel-facing cone, 240-unit weapon reach, 0.85-radian idle
+  and 1.55-radian search turret sweeps,
+  rare about-faces, 7.5-radian/s tracking, last-sighting and incoming-shot
+  bearing investigation, and witnesses looking back toward incoming fire
+  rather than at damaged allies, subject to cover occlusion;
+- one indigo long-range Local Drone per wave, maintaining 275–365 units
+  from the player and launching 375-unit/s guided missiles from 275–395
+  units when in sight. Missiles have a 780-unit maximum flight path,
+  no launch velocity inheritance, and a 48-unit blast; they detonate
+  against any physical barrier, enemy or player without bouncing;
+- shared all-drone collision clearance, 12-unit preferred personal space,
+  and separation of forced overlaps caused by blasts or obstacle shoves;
+- one unarmed Repair Bot per wave with global awareness of damaged allies,
+  persistent tracking of an injured moving patient until healed or destroyed,
+  105-unit/s movement
+  and a 170-unit electrical healing tether. Repair Bots flee toward armed
+  allies when shot at and self-destruct if only support units remain;
+- separate hull HP and shield HP, shield-first damage, shield-above-hull mini-bars,
+  and a compact bottom HUD for speed, thrust, health, shields, heat and
+  placeholders for secondary ammunition and ability cooldown;
+- physical ship/enemy impacts with separation, impulses and temporary debris;
+- ship death explosions with a brief wreckage phase before game over;
+- baseline primary **Pulse Laser** with 500-unit/s aim-aligned velocity
+  independent of the ship's velocity, one damage, 1,150-unit range,
+  0.29-second cadence, six heat per shot;
+- **Special retro burners** with front-shoulder flame exhaust and active
+  265-unit/s² deceleration, without adding passive drag;
+- limited-ammo **Unguided Rockets** on secondary input: six per run,
+  fixed 350-unit/s forward speed independent of ship velocity,
+  three wall ricochets, 555-unit range, and
+  95-unit blast radius damaging both teams with physical knockback;
+- projectiles that ricochet off walls and the core, but disintegrate
+  against asteroids and apply a small kinetic push;
+- keyboard and controller inputs, a Resume / Reset Run pause menu with
+  D-pad/stick navigation and controller A selection instead of a global
+  restart key, score and five-second wave restarts;
+- between-wave 3-card upgrade selection with stacking movement, hull, shield,
+  Pulse Laser and rocket effects, including eight-direction kill cascade;
+- test-only automatic, independent per-wave random enemy escalation:
+  +1 Local Drone, +5% enemy shot/missile damage, +5% projectile speed,
+  or +0.5 hull for every enemy type;
+- wave-completion resupply of 25% maximum hull, full shields and 50% total
+  rocket capacity;
+- procedurally synthesized, deliberately quiet shot, missile, explosion
+  and low-volume throttled rebound audio cues.
 
-| Planned equipment | Behaviour / implementation |
-| --- | --- |
-| Rockets | Straight flight, impact blast, radius damage with obstruction checks |
-| Lasers | Ray query stopping at walls, visible beam, per-target damage cadence |
-| Missiles | Target selection, limited turn rate, reacquire when target dies |
-| Timed bombs | Fuse component, visible countdown, shared blast service |
-| Sticky bombs | Attach to hit actor/local point; detach safely when host dies |
-| Proximity mines | Arming delay, team-aware trigger radius, capped active count |
-| Cluster munitions | Spawn bounded child projectiles once on detonation |
-| Boost | Current timed pickup; later heat/fuel equipment with recharge |
-| Shields | Current timed absorption; later capacity/recharge and impact feedback |
+There are still **no collectible power-ups, boost equipment, gravity-well
+enemies or changing arenas**; the one small static gravity anomaly is a
+test mechanic, and upgrades are awarded on an inter-wave screen.
 
-Weapon effects should use a common detonation guard so impact and timer expiry
-cannot explode twice. Cluster children must not recursively produce clusters.
-Add tests for friendly fire, destroyed targets, wall occlusion, fuse timing,
-and upper bounds on simultaneous explosives.
+## Once movement and combat feel right
 
-## Arena and gravity progression
-Replace the fixed rectangle/core with ArenaDefinition resources and reusable
-collision geometry: offset cores, narrow channels, rotating hazards, and
-multiple islands. Keep spawn validation radius-aware and test reachable routes.
-Add attracting/repelling/orbiting field components with softening near the center
-and a cap on combined acceleration. Decide explicitly whether each weapon,
-enemy, and pickup responds to gravity.
+Later branches can add weapon variants: rockets, lasers, homing missiles, timed
+and sticky bombs, proximity mines and cluster projectiles; then defensive and
+movement equipment such as shield recharge and afterburners. Build shared damage,
+physics and projectile interfaces before adding multiple weapon types.
 
-## Subsequent milestones
-1. Playtest movement and readability; add sound and hit/destruction feedback.
-2. Ship rockets and mines through the shared damage/weapon contracts.
-3. Add arena selection and gravity variants with deterministic seeded waves.
-4. Add remaining weapons, controller/remapping UI, difficulty options, and saves.
+Arena resources can later introduce broken rings, narrow channels, islands,
+rotating obstacles, and attracting or repelling gravity fields. Any new
+navigation should use the same collision clearance and remain testable around
+obstacles.
 
-No additional weapon types or arena layouts in this roadmap are implemented yet.
+## Near-term acceptance targets
+
+1. The ship feels controllable and inertia is consistent at different frame
+   rates, with a 320-unit/s max and no friction below it; Pulse Laser shots
+   outpace the ship and never inherit the ship's velocity.
+2. Ordinary Local Drones can be ambushed from behind, only see far in their
+   turret cone; long-range variants attempt to maintain a standoff distance,
+   and investigate the last sighting, a witnessed allied impact, or the
+   reverse bearing of an incoming shot. Alerts never expose the unseen
+   attacker's exact coordinates.
+3. Bullet ricochets behave predictably against every arena surface.
+4. Ramming enemies transfers momentum, emits debris, and can cause damage.
+   Drones avoid each other and never occupy the same footprint;
+   Asteroid impacts never damage ships and persistent thrust slowly moves them.
+5. Controller A selects focused menu options, menu-only restart, pause
+   and wave timing are reliable; field gravity remains escapable and
+   visibly deflects shots and guided missiles, while Local Drones attempt
+   to leave its inner region without overriding launch inertia rules;
+   missile contact with walls, core, asteroids and all ships detonates
+   instead of bouncing.

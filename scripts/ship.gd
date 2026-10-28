@@ -1,51 +1,88 @@
 extends Node2D
 
 const COLLISION_RADIUS := 11.0
+const THRUST_ACCELERATION := 145.0
+const RETRO_DECELERATION := 265.0
+const MAX_SPEED := 320.0
 const Weapon = preload("res://scripts/weapon.gd")
+const RocketLauncher = preload("res://scripts/secondary_rockets.gd")
+const DamageModel = preload("res://scripts/combat_health.gd")
+
 var weapon := Weapon.new()
+var secondary := RocketLauncher.new()
+var thrust_multiplier := 1.0
 var velocity := Vector2.ZERO
-var hull := 3
-var shield := 0.0
-var rapid := 0.0
-var boost := 0.0
+var hull := 3.0
+var max_hull := 3.0
+var shields := 2.0
+var max_shields := 2.0
+var heat := 0.0
+const MAX_HEAT := 100.0
+const COOLING_RATE := 12.0
+const FIRE_HEAT := Weapon.HEAT_PER_SHOT
 var invulnerable := 2.0
 var thrusting := false
+var retro_active := false
 
-func step(delta: float, arena: Node2D, gravity: Vector2) -> void:
-	rotation += Input.get_axis("turn_left", "turn_right") * 3.8 * delta
+func step(delta: float, arena: Node2D) -> void:
+	rotation += Input.get_axis("turn_left", "turn_right") * 3.5 * delta
 	var thrust_strength := Input.get_action_strength("thrust")
 	thrusting = thrust_strength > 0.02
-	var acceleration := 700.0 if boost > 0 and Input.is_action_pressed("boost") else 320.0
+	# Nothing reduces momentum passively. Thrust, brake and impacts are forces.
 	if thrusting:
-		velocity += Vector2.UP.rotated(rotation) * acceleration * thrust_strength * delta
-	if Input.is_action_pressed("brake"):
-		velocity *= exp(-3.5 * delta)
-	velocity += gravity * delta
-	velocity = velocity.limit_length(520 if boost > 0 else 330)
+		velocity += Vector2.UP.rotated(rotation) * THRUST_ACCELERATION * thrust_multiplier * thrust_strength * delta
+	# Front-mounted retro thrusters arrest momentum without reversing it.
+	# The old brake inputs remain aliases; Special is the explicit control.
+	var retro_strength: float = maxf(Input.get_action_strength("special"), Input.get_action_strength("brake"))
+	retro_active = retro_strength > 0.02 and velocity.length() > 0.01
+	if retro_active:
+		velocity = velocity.move_toward(Vector2.ZERO, RETRO_DECELERATION * retro_strength * delta)
+	# Maximum ship speed is enforced without any passive damping below it.
+	# Projectile speed is deliberately higher and ignores this velocity.
+	enforce_speed_limit()
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
-	shield = maxf(0, shield - delta)
-	rapid = maxf(0, rapid - delta)
-	boost = maxf(0, boost - delta)
-	invulnerable = maxf(0, invulnerable - delta)
+	enforce_speed_limit()
+	invulnerable = maxf(0.0, invulnerable - delta)
+	heat = maxf(0.0, heat - COOLING_RATE * delta)
 	weapon.tick(delta)
+	secondary.tick(delta)
 	queue_redraw()
 
-func hit() -> bool:
-	if invulnerable > 0:
+func enforce_speed_limit() -> void:
+	velocity = velocity.limit_length(MAX_SPEED)
+
+func fired_primary() -> void:
+	# Heat is tracked for the new HUD; no heat lockout until weapons are tuned.
+	heat = minf(MAX_HEAT, heat + FIRE_HEAT)
+
+func fired_secondary() -> void:
+	heat = minf(MAX_HEAT, heat + secondary.HEAT_PER_SHOT)
+
+func hit(amount: float = 1.0, shield_factor: float = 1.0, hull_factor: float = 1.0) -> bool:
+	if invulnerable > 0.0:
 		return false
-	invulnerable = 1.4
-	if shield > 0:
-		shield = maxf(0, shield - 3)
-	else:
-		hull -= 1
+	var result: Vector2 = DamageModel.apply(hull, shields, amount, shield_factor, hull_factor)
+	hull = result.x
+	shields = result.y
+	invulnerable = 1.3
+	queue_redraw()
 	return true
 
 func _draw() -> void:
-	var color := Color(0.3, 1, 0.95)
-	if invulnerable > 0 and fmod(invulnerable, 0.2) < 0.1:
-		color.a = 0.35
-	draw_polyline(PackedVector2Array([Vector2(0, -15), Vector2(10, 10), Vector2(0, 6), Vector2(-10, 10), Vector2(0, -15)]), color, 2.5, true)
+	# The hull is always identical: impacts never deform or flash the ship.
+	draw_polyline(PackedVector2Array([
+		Vector2(0, -15), Vector2(10, 10), Vector2(0, 6),
+		Vector2(-10, 10), Vector2(0, -15)
+	]), Color(0.3, 1.0, 0.95), 2.5, true)
 	if thrusting:
-		draw_polyline(PackedVector2Array([Vector2(-5, 10), Vector2(0, 21 + randf() * 6), Vector2(5, 10)]), Color(1, 0.6, 0.2), 2, true)
-	if shield > 0:
-		draw_arc(Vector2.ZERO, 20, 0, TAU, 40, Color(0.3, 0.6, 1), 2, true)
+		draw_polyline(PackedVector2Array([
+			Vector2(-5, 10), Vector2(0, 21 + randf() * 6), Vector2(5, 10)
+		]), Color(1, 0.6, 0.2), 2.0, true)
+	if retro_active:
+		# Two tiny flames at the FRONT shoulders, pointing forward to
+		# represent reverse-facing exhaust jets.
+		for side in [-1.0, 1.0]:
+			var port := Vector2(side * 7.0, -5.0)
+			var tip := port + Vector2(side * 2.0, -(7.0 + randf_range(0.0, 3.0)))
+			draw_line(port, tip, Color(1.0, 0.68, 0.26), 2.4, true)
+			draw_line(port, port.lerp(tip, 0.55), Color(1.0, 0.96, 0.67), 1.2, true)
