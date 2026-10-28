@@ -7,33 +7,42 @@ in `tests/smoke.gd`.
 
 ## Flight-lab scope
 
-- Only the **outer perimeter walls** remain: no centre core, asteroids or
-  gravity field. Normal wall ricochets and projectile physics remain active.
-- Each test wave contains **two or three ordinary Local Drones**. Difficulty
-  escalation and between-wave upgrades are suspended in the flight lab.
-- The right-hand **live loadout panel** offers only three chassis:
-  **Light**, **Medium** and **Heavy**. Engine tuning is intentionally deferred;
-  all ships use the **Standard** engine.
-- Choose between the standard **Pulse Laser** (hold to fire repeatedly,
-  ricocheting off walls) and the experimental **Charge Beam**
-  (**hold primary fire to charge; release to fire once**).
-- The Charge Beam stores energy for up to **1.5 seconds**. A valid charge
-  of at least 0.1 seconds produces a ray with charge-dependent range
-  (**180–850 units**) and damage (**0.75–4.25 HP**). Charging longer also
-  increases its visual thickness and heat generated on discharge.
-- The beam **pierces aligned enemies** but stops at the **first wall** rather
-  than reflecting or spawning a bouncing projectile. A future upgrade might
-  allow controlled beam ricochets; that mechanic is **not yet enabled**.
-- Discharging incurs a **0.55-second cooldown**; switching weapons
-  cancels stored charge. Its discharge and ship-capacitor glow are visible,
-  with a deliberately restrained accompanying sound.
-- The bottom HUD shows flight diagnostics and, while the beam is equipped,
-  current charge, prospective range/damage and cooldown.
-- **Reset Position + Velocity** returns the ship to the starting point without
-  restarting its wave or changing the selected chassis and primary weapon.
-- Ship mass affects ramming impulses and rocket knockback; the selected
-  hull also changes sprite size and collision footprint. There is no passive
-  velocity drag.
+- An empty arena bounded only by the outer ricochet walls. No core,
+  asteroids or active gravity well. Two or three ordinary Local Drones
+  spawn for each test encounter.
+- Only the three distinct **Light**, **Medium**, and **Heavy** chassis are
+  selectable. Engines remain fixed to **Standard**.
+- **Primary weapon selection**:
+  - **Pulse Laser** — hold **Space** (or primary fire) for rapid ricocheting
+    projectiles, as in the classic baseline.
+  - **Lightning Gun** — hold primary fire to charge for up to **1.5 s**,
+    then release for an **instant, jagged lightning flash**. The flash can
+    pierce aligned drones, its range/damage scale from approximately
+    **180–850 units** / **0.75–4.25 HP**, and walls **absorb it with
+    no bounce**. A discharge has a **0.55 s** cooldown.
+- **Secondary weapon selection**:
+  - **Rockets** — press **Q** (or secondary fire) for unguided explosive
+    rockets, preserving original bounce behaviour.
+  - **Beam Cannon** — **hold Q for 1.8 s**. Charging diverts all propulsion,
+    increasingly brakes the ship, and finally brings it to a halt.
+    **Release only when fully charged and stopped** to emit a much longer,
+    **growing, animated serpentine beam**. The tip travels at **930 units/s**,
+    reflects from perimeter walls, follows a wavy caterpillar-like path,
+    and exhausts a total path length of **1,800 units**. Each drone along
+    its path takes **3.2 damage once** per discharge. The beam fades shortly
+    after spending its range and has a **1.25 s** cooldown.
+- The Pulse Laser and Lightning Gun are independent choices from the
+  secondary Rocket / Beam Cannon selection, enabling experiments with
+  either or both charged weapons. Charging the Beam Cannon temporarily
+  suppresses the primary gun, because it drains ship power.
+- Releasing the Beam Cannon **early** or while still moving cancels
+  the charge without firing. A visible capacitor glow and HUD readout
+  show its progress.
+- The flight HUD includes chassis, speed, hull, heat and equipped weapon
+  states. Reset Position + Velocity clears stored charge but preserves
+  the current loadout.
+- Classic gameplay remains available via `res://scenes/main.tscn`.
+  The original automated smoke suite remains enabled.
 
 The **Medium + Standard** combination retains classic movement:
 145 units/s² acceleration, 265 units/s² braking, 320 units/s top speed and
