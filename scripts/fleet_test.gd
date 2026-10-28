@@ -606,8 +606,18 @@ func advance_enemies(delta: float) -> void:
             var safe_radius := float(rock["radius"]) + float(enemy["radius"])
             if from_rock.length_squared() < safe_radius * safe_radius:
                 var outward := from_rock.normalized() if from_rock.length() > 0.1 else Vector2.RIGHT
+                var kinetic_impact := maxf(0.0, -vel.dot(outward))
                 future = Vector2(rock["pos"]) + outward * safe_radius
                 vel = vel.slide(outward) * 0.65
+                if kinetic_impact > ASTEROID_SAFE_IMPACT:
+                    var collision_harm := clampf((kinetic_impact - ASTEROID_SAFE_IMPACT) * 0.11, 0.5, 12.0)
+                    enemy["hp"] = maxf(0.0, float(enemy["hp"]) - collision_harm)
+                    enemy["flash"] = 0.3
+                    impacts.append({"pos": future - outward * float(enemy["radius"]), "life": 0.32, "color": PORT_COLOR})
+                    if float(enemy["hp"]) <= 0.0 and not bool(enemy["destroyed"]):
+                        enemy["destroyed"] = true
+                        create_explosion(future, 15)
+                        sound_bus.play("explosion")
         # Ships are solid to one another and cannot overlap the flagship.
         var from_player := future - ship_pos
         var min_player := float(enemy["radius"]) + SHIP_RADIUS
@@ -618,9 +628,9 @@ func advance_enemies(delta: float) -> void:
         enemy["pos"] = future
         enemy["velocity"] = vel
         enemy["reload"] = maxf(0.0, float(enemy["reload"]) - delta)
-        if float(enemy["reload"]) <= 0.0:
-            fire_enemy(j)
         targets[j] = enemy
+        if not bool(enemy["destroyed"]) and float(enemy["reload"]) <= 0.0:
+            fire_enemy(j)
 
 func fire_enemy(j: int) -> void:
     if player_destroyed:
@@ -1111,13 +1121,13 @@ func draw_beam_scar_glow() -> void:
         var enemy: Dictionary = targets[j]
         var centre: Vector2 = enemy["pos"]
         var heading: float = enemy["angle"]
-        var from: Vector2 = centre + Vector2(scar["entry_local"]).rotated(heading)
-        var to: Vector2 = centre + Vector2(scar["exit_local"]).rotated(heading)
+        var entry_world: Vector2 = centre + Vector2(scar["entry_local"]).rotated(heading)
+        var exit_world: Vector2 = centre + Vector2(scar["exit_local"]).rotated(heading)
         var intensity := clampf(float(scar["life"]) / 8.0, 0.0, 1.0)
-        draw_line(from, to, Color(1.0, 0.29, 0.10, 0.48 * intensity), 9.0, true)
-        draw_line(from, to, Color(1.0, 0.83, 0.43, 0.75 * intensity), 3.0, true)
-        draw_circle(from, 6.0, Color(1.0, 0.91, 0.65, 0.65 * intensity))
-        draw_circle(to, 8.0, Color(1.0, 0.47, 0.16, 0.75 * intensity))
+        draw_line(entry_world, exit_world, Color(1.0, 0.29, 0.10, 0.48 * intensity), 9.0, true)
+        draw_line(entry_world, exit_world, Color(1.0, 0.83, 0.43, 0.75 * intensity), 3.0, true)
+        draw_circle(entry_world, 6.0, Color(1.0, 0.91, 0.65, 0.65 * intensity))
+        draw_circle(exit_world, 8.0, Color(1.0, 0.47, 0.16, 0.75 * intensity))
 
 
 func damage_target(index: int, amount: float, at: Vector2) -> void:
@@ -1357,10 +1367,12 @@ func draw_hud() -> void:
     draw_string(font, bar_pos + Vector2(0, -1), "BOW BEAM", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, BEAM_COLOR)
     draw_rect(Rect2(bar_pos + Vector2(0, 10), Vector2(180, 11)), Color(0.10, 0.19, 0.27), true)
     draw_rect(Rect2(bar_pos + Vector2(0, 10), Vector2(180 * charge_ratio, 11)), BEAM_COLOR, true)
-    var beam_status := "RELEASE" if charge > 0.0 else ("RECHARGING" if beam_recovery > 0.0 else "HOLD Y / SPACE")
-    if charge_ratio >= 0.999:
-        beam_status = "READY - STOPPED"
+    var beam_status: String = ("%.1f S TO FIRE" % maxf(0.0, CHARGE_SECONDS - charge)) if beam_charging else (
+        "RECHARGING" if beam_recovery > 0.0 else "Y / SPACE TO ARM")
     draw_string(font, Vector2(880, 79), beam_status, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, WHITE)
+    var missile_status := "READY  [4]" if missile_cooldown <= 0.0 else "RELOAD %.1fs" % missile_cooldown
+    draw_string(font, Vector2(880, 99), "AFT MISSILES  " + missile_status,
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 12, PORT_COLOR)
     draw_string(font, Vector2(1093, 29), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
     if sound_message_timer > 0.0:
         draw_string(font, Vector2(355, 130), sound_message, HORIZONTAL_ALIGNMENT_CENTER, 520, 19, WHITE)
@@ -1375,9 +1387,9 @@ func draw_hud() -> void:
     draw_rect(Rect2(498, 705, 140 * player_shields / PLAYER_MAX_SHIELDS, 10), STARBOARD_COLOR, true)
     draw_string(font, Vector2(667, 720), "SPEED %03d  |  ZOOM %.2f" % [roundi(velocity.length()), view_zoom],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
-    draw_string(font, Vector2(25, 754), "LEFT STICK: STEER / THRUST / BRAKE     X: PORT     B: STARBOARD     Y: CHARGE BEAM     A: CEASE FIRE",
+    draw_string(font, Vector2(25, 754), "LEFT STICK: TURN / FORWARD / REVERSE     X: PORT     B: STBD     Y: BEAM ARM/CANCEL     A: 4 MISSILES",
         HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
-    draw_string(font, Vector2(25, 782), "Keyboard: WASD move   Q/E toggle batteries   Space beam   C cease   V show arcs   -/= zoom   R restart",
+    draw_string(font, Vector2(25, 782), "Keyboard: WASD steer/thrust/reverse   Q/E broadsides   Space beam arm/cancel   F missiles   C cease   V arcs   R reset",
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
     if encounter_finished:
         draw_rect(Rect2(280, 303, 640, 126), Color(0.012, 0.026, 0.042, 0.90), true)
