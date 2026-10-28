@@ -13,6 +13,8 @@ const Explosion = preload("res://scripts/explosion.gd")
 const ImpactParticles = preload("res://scripts/impact_particles.gd")
 const Upgrades = preload("res://scripts/upgrades.gd")
 const SoundBus = preload("res://scripts/sound_bus.gd")
+const ChargeBeam = preload("res://scripts/charge_beam.gd")
+const BeamEffect = preload("res://scripts/beam_effect.gd")
 
 var arena := Arena.new()
 var ship: Node2D
@@ -53,15 +55,13 @@ var last_difficulty := "NONE"
 # and its comprehensive smoke checks continue to use their old behaviour.
 var flight_test_mode := false
 const TEST_HULLS := ["Light", "Medium", "Heavy"]
-const TEST_ENGINES := ["Standard", "High-Thrust", "Vector Drive", "Overdrive"]
+const TEST_WEAPONS := ["Pulse Laser", "Charge Beam"]
 var test_hull_index := 1
-var test_engine_index := 0
-var test_handling_multiplier := 1.0
+var test_weapon_index := 0
+var charge_beam := ChargeBeam.new()
 var test_controls_layer := CanvasLayer.new()
 var test_hull_picker := OptionButton.new()
-var test_engine_picker := OptionButton.new()
-var test_multiplier_slider := HSlider.new()
-var test_multiplier_readout := Label.new()
+var test_weapon_picker := OptionButton.new()
 const DIFFICULTY_PROJECTILE_FACTOR := 1.05
 const DIFFICULTY_HEALTH_STEP := 0.5
 
@@ -228,7 +228,7 @@ func setup_flight_test_controls() -> void:
 	add_child(test_controls_layer)
 	var panel := PanelContainer.new()
 	panel.position = Vector2(899, 63)
-	panel.custom_minimum_size = Vector2(276, 230)
+	panel.custom_minimum_size = Vector2(276, 155)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.02, 0.05, 0.09, 0.92)
 	style.border_color = Color(0.20, 0.65, 0.80, 0.8)
@@ -249,45 +249,42 @@ func setup_flight_test_controls() -> void:
 		test_hull_picker.add_item(hull_name)
 	test_hull_picker.select(test_hull_index)
 	column.add_child(test_hull_picker)
-	var engine_label := Label.new()
-	engine_label.text = "Engine"
-	column.add_child(engine_label)
-	for engine_name in TEST_ENGINES:
-		test_engine_picker.add_item(engine_name)
-	test_engine_picker.select(test_engine_index)
-	column.add_child(test_engine_picker)
-	test_multiplier_readout.text = "Thrust / brake multiplier: 1.00x"
-	column.add_child(test_multiplier_readout)
-	test_multiplier_slider.min_value = 0.5
-	test_multiplier_slider.max_value = 3.0
-	test_multiplier_slider.step = 0.25
-	test_multiplier_slider.value = test_handling_multiplier
-	column.add_child(test_multiplier_slider)
+	var weapon_label := Label.new()
+	weapon_label.text = "Primary weapon"
+	column.add_child(weapon_label)
+	for weapon_name in TEST_WEAPONS:
+		test_weapon_picker.add_item(weapon_name)
+	test_weapon_picker.select(test_weapon_index)
+	column.add_child(test_weapon_picker)
+	var tip := Label.new()
+	tip.text = "CHARGE BEAM: HOLD FIRE, RELEASE TO SHOOT"
+	tip.add_theme_font_size_override("font_size", 11)
+	column.add_child(tip)
 	var reset_motion := Button.new()
 	reset_motion.text = "RESET POSITION + VELOCITY"
 	reset_motion.pressed.connect(reset_flight_test_motion)
 	column.add_child(reset_motion)
 	test_hull_picker.item_selected.connect(change_test_hull)
-	test_engine_picker.item_selected.connect(change_test_engine)
-	test_multiplier_slider.value_changed.connect(change_test_multiplier)
+	test_weapon_picker.item_selected.connect(change_test_weapon)
 
 func change_test_hull(index: int) -> void:
 	test_hull_index = index
 	apply_flight_test_loadout()
 
-func change_test_engine(index: int) -> void:
-	test_engine_index = index
-	apply_flight_test_loadout()
-
-func change_test_multiplier(value: float) -> void:
-	test_handling_multiplier = value
-	test_multiplier_readout.text = "Thrust / brake multiplier: %.2fx" % value
-	apply_flight_test_loadout()
+func change_test_weapon(index: int) -> void:
+	if index < 0 or index >= TEST_WEAPONS.size():
+		return
+	test_weapon_index = index
+	charge_beam.reset()
+	if is_instance_valid(ship):
+		ship.beam_charge_visual = 0.0
+		ship.queue_redraw()
+	update_hud()
 
 func apply_flight_test_loadout() -> void:
 	if not flight_test_mode or not is_instance_valid(ship):
 		return
-	ship.configure(TEST_HULLS[test_hull_index], TEST_ENGINES[test_engine_index], test_handling_multiplier)
+	ship.configure(TEST_HULLS[test_hull_index], "Standard")
 	update_hud()
 
 func reset_flight_test_motion() -> void:
@@ -297,6 +294,9 @@ func reset_flight_test_motion() -> void:
 	ship.velocity = Vector2.ZERO
 	ship.rotation = 0.0
 	ship.invulnerable = 2.0
+	charge_beam.reset()
+	ship.beam_charge_visual = 0.0
+	ship.queue_redraw()
 	update_hud()
 
 func finish_wave() -> void:
@@ -389,6 +389,7 @@ func bind_pad_axis(action: String, axis: int, value: float) -> void:
 	InputMap.action_add_event(action, event)
 
 func reset() -> void:
+	charge_beam.reset()
 	for entity in enemies + shots + rockets + homing_missiles + effects:
 		entity.free()
 	enemies.clear()
@@ -403,7 +404,7 @@ func reset() -> void:
 		ship.free()
 	ship = Ship.new()
 	if flight_test_mode:
-		ship.configure(TEST_HULLS[test_hull_index], TEST_ENGINES[test_engine_index], test_handling_multiplier)
+		ship.configure(TEST_HULLS[test_hull_index], "Standard")
 	ship.position = Vector2(220, 425)
 	add_child(ship)
 	score = 0
@@ -493,7 +494,13 @@ func _physics_process(delta: float) -> void:
 		return
 	arena.pull_body(ship, delta)
 	ship.step(delta, arena)
-	if Input.is_action_pressed("fire"):
+	if flight_test_mode and test_weapon_index == 1:
+		var release: Dictionary = charge_beam.advance(delta, Input.is_action_pressed("fire"))
+		ship.beam_charge_visual = charge_beam.charge_fraction() if charge_beam.charging else 0.0
+		ship.queue_redraw()
+		if not release.is_empty():
+			fire_charged_beam(release)
+	elif Input.is_action_pressed("fire"):
 		var volley: Array[Dictionary] = ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation))
 		if not volley.is_empty():
 			ship.fired_primary()
@@ -798,6 +805,43 @@ func step_homing_missiles(delta: float) -> void:
 		else:
 			missile.queue_redraw()
 
+func fire_charged_beam(spec: Dictionary) -> void:
+	# Apply damage once, along a zero-travel-time ray. Its world-space
+	# endpoint is clipped to the first wall or asteroid before hit tests.
+	if not flight_test_mode or not is_instance_valid(ship):
+		return
+	var heading: Vector2 = Vector2.UP.rotated(ship.rotation)
+	var muzzle: Vector2 = ship.position + heading * (ship.collision_radius + 4.0)
+	if arena.blocked(muzzle, 1.0):
+		return
+	var maximum: float = float(spec["length"])
+	var endpoint: Vector2 = arena.beam_endpoint(muzzle, heading, maximum)
+	if muzzle.distance_to(endpoint) < 1.0:
+		return
+	var visible_beam := BeamEffect.new()
+	visible_beam.configure(muzzle, endpoint, float(spec["width"]), float(spec["power"]))
+	effects.append(visible_beam)
+	add_child(visible_beam)
+	ship.heat = minf(ship.MAX_HEAT, ship.heat + float(spec["heat"]))
+	sound_bus.play("beam")
+	if muzzle.distance_to(endpoint) < maximum - 0.25:
+		# Wall absorbs the beam: no projectile, bounce or secondary ray.
+		arena.flash_nearest(endpoint)
+		spawn_debris(endpoint, Color(0.5, 0.85, 1.0), 0.42, 5, 0.20)
+	for index in range(enemies.size() - 1, -1, -1):
+		var enemy = enemies[index]
+		var closest: Vector2 = Geometry2D.get_closest_point_to_segment(enemy.position, muzzle, endpoint)
+		var reach: float = enemy.COLLISION_RADIUS + float(spec["width"]) * 0.5
+		if enemy.position.distance_squared_to(closest) > reach * reach:
+			continue
+		enemy.velocity += heading * 22.0
+		var destroyed: bool = enemy.take_damage(float(spec["damage"]))
+		notify_drones_of_hit(enemy, heading)
+		spawn_debris(closest, Color(0.62, 0.91, 1.0), 0.72, 6, 0.26)
+		if destroyed:
+			defeat_enemy(index)
+
+
 func fire_player_rocket() -> void:
 	var direction: Vector2 = Vector2.UP.rotated(ship.rotation)
 	var launch_point: Vector2 = ship.position + direction * ship.secondary.MUZZLE_OFFSET
@@ -1052,13 +1096,19 @@ func update_hud() -> void:
 	]
 	if flight_test_mode:
 		hud.text = "OMEGAWAR / FLIGHT LAB     TEST %02d     HOSTILES %02d     NO OBSTACLES" % [wave, enemies.size()]
-		status_hud.text = "%s / %s   SPEED %4.0f / %4.0f   THRUST %3.0f%%   RETRO %3.0f%%   HEAT %3.0f%%\nACCEL %5.0f   BRAKE %5.0f   TURN %.2f   MASS %.2f   HULL %.1f/%.0f   ROCKETS %d/%d" % [
-			ship.profile_name.to_upper(), ship.engine_name.to_upper(), ship.velocity.length(), ship.speed_limit,
-			Input.get_action_strength("thrust") * 100.0,
-			maxf(Input.get_action_strength("special"), Input.get_action_strength("brake")) * 100.0,
-			ship.heat / ship.MAX_HEAT * 100.0, ship.acceleration * ship.thrust_multiplier,
-			ship.braking, ship.rotation_speed, ship.mass, ship.hull, ship.max_hull,
-			ship.secondary.ammo, ship.secondary.MAX_AMMO
+		var weapon_display := "PULSE LASER: HOLD TO FIRE"
+		if test_weapon_index == 1:
+			var beam_stats: Dictionary = ChargeBeam.spec_for(charge_beam.charge_time)
+			weapon_display = "BEAM %3.0f%%  RANGE %3.0f  DMG %.2f  RECHARGE %.1fs" % [
+				charge_beam.charge_fraction() * 100.0, float(beam_stats["length"]),
+				float(beam_stats["damage"]), charge_beam.cooldown
+			]
+		status_hud.text = "%s   SPEED %4.0f/%4.0f   HULL %.1f/%.0f   HEAT %3.0f%%   ROCKETS %d/%d\n%s   ACCEL %3.0f   BRAKE %3.0f   TURN %.2f   MASS %.2f" % [
+			ship.profile_name.to_upper(), ship.velocity.length(), ship.speed_limit,
+			ship.hull, ship.max_hull, ship.heat / ship.MAX_HEAT * 100.0,
+			ship.secondary.ammo, ship.secondary.MAX_AMMO, weapon_display,
+			ship.acceleration * ship.thrust_multiplier, ship.braking,
+			ship.rotation_speed, ship.mass
 		]
 	if dying or paused or game_over or bonus_active:
 		banner.text = ""
