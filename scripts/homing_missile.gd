@@ -33,7 +33,10 @@ func steer(delta: float, target_position: Vector2) -> void:
 		current = desired
 	if not desired.is_zero_approx():
 		var angle: float = rotate_toward(current.angle(), desired.angle(), TURN_RATE * delta)
-		velocity = Vector2.from_angle(angle) * cruise_speed
+		# Retain speed changes accumulated from gravity between guidance
+		# steps; otherwise steering would erase the pull every frame.
+		var retained_speed: float = clampf(velocity.length(), cruise_speed * 0.70, cruise_speed * 1.50)
+		velocity = Vector2.from_angle(angle) * retained_speed
 	elif velocity.is_zero_approx():
 		velocity = Vector2.RIGHT * cruise_speed
 	sync_visual_heading()

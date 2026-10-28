@@ -6,6 +6,11 @@ const CENTRE := Vector2(846.0, 613.0)
 const VISUAL_RADIUS := 15.0
 const FIELD_RADIUS := 270.0
 const MAX_PULL := 118.0
+# Projectiles feel a much stronger force than craft. Kept separate from
+# escape-balanced gravity so the well visibly bends shots and missiles.
+const BULLET_PULL_MULTIPLIER := 6.0
+const ROCKET_PULL_MULTIPLIER := 7.0
+const HOMING_PULL_MULTIPLIER := 6.5
 const SOFTENING := 78.0
 var spin := 0.0
 

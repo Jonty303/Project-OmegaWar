@@ -22,6 +22,41 @@ var gravity_well := GravityWell.new()
 func gravity_at(point: Vector2) -> Vector2:
 	return gravity_well.acceleration_at(point)
 
+func projectile_gravity_at(point: Vector2, is_rocket: bool = false, is_homing: bool = false) -> Vector2:
+	var scale: float = gravity_well.BULLET_PULL_MULTIPLIER
+	if is_homing:
+		scale = gravity_well.HOMING_PULL_MULTIPLIER
+	elif is_rocket:
+		scale = gravity_well.ROCKET_PULL_MULTIPLIER
+	return gravity_at(point) * scale
+
+func gravity_escape_waypoint(at: Vector2, radius: float, safe_radius: float) -> Vector2:
+	# Choose reachable directions that INCREASE distance from the anomaly.
+	# Avoid an exit goal inside the core, off the arena or in an asteroid.
+	var from_well: Vector2 = at - gravity_well.position
+	if from_well.is_zero_approx():
+		from_well = Vector2.RIGHT
+	var away: Vector2 = from_well.normalized()
+	var best: Vector2 = at
+	var best_score := -INF
+	for angle in [0.0, 0.40, -0.40, 0.85, -0.85, 1.30, -1.30, 1.80, -1.80]:
+		var direction: Vector2 = away.rotated(angle)
+		var candidate: Vector2 = at + direction * minf(145.0, maxf(64.0, safe_radius - from_well.length() + 26.0))
+		if blocked(candidate, radius + 3.0):
+			continue
+		var waypoint: Vector2 = approach_waypoint(at, candidate, radius)
+		if blocked(waypoint, radius):
+			continue
+		var step_direction: Vector2 = (waypoint - at).normalized()
+		var improvement: float = waypoint.distance_to(gravity_well.position) - from_well.length()
+		if improvement < 2.0 or step_direction.dot(away) < 0.10:
+			continue
+		var score: float = improvement + step_direction.dot(away) * 20.0
+		if score > best_score:
+			best_score = score
+			best = waypoint
+	return best
+
 func pull_body(body: Node2D, delta: float) -> void:
 	body.velocity += gravity_at(body.position) * delta
 

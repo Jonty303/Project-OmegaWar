@@ -595,7 +595,8 @@ func step_shots(delta: float) -> void:
 					break
 				if not shot.hostile:
 					alert_repair_bots_to_fire(shot.position, shot.velocity)
-				shot.velocity += arena.gravity_at(shot.position) * delta / float(steps)
+				shot.velocity += arena.projectile_gravity_at(shot.position) * delta / float(steps)
+				shot.sync_visual_heading()
 				arena.move_shot(shot, delta / float(steps))
 				if shot.dissolving:
 					break # Hit heavy asteroid cover: no damage or ricochet.
@@ -667,7 +668,7 @@ func step_homing_missiles(delta: float) -> void:
 				missile.steer(delta, ship.position)
 			var substeps: int = maxi(1, int(ceil(missile.velocity.length() * delta / 3.0)))
 			for substep in range(substeps):
-				missile.velocity += arena.gravity_at(missile.position) * delta / float(substeps)
+				missile.velocity += arena.projectile_gravity_at(missile.position, true, true) * delta / float(substeps)
 				missile.sync_visual_heading()
 				var next: Vector2 = missile.position + missile.velocity * (delta / float(substeps))
 				# Missiles NEVER bounce: both the core and exterior walls
@@ -773,7 +774,8 @@ func step_rockets(delta: float) -> void:
 			# a ship, a dense rock, or a narrow section of arena wall.
 			var substeps: int = maxi(1, int(ceil(rocket.velocity.length() * delta / 3.0)))
 			for substep in range(substeps):
-				rocket.velocity += arena.gravity_at(rocket.position) * delta / float(substeps)
+				rocket.velocity += arena.projectile_gravity_at(rocket.position, true) * delta / float(substeps)
+				rocket.sync_visual_heading()
 				alert_repair_bots_to_fire(rocket.position, rocket.velocity)
 				arena.move_shot(rocket, delta / float(substeps))
 				if rocket.impact_pending:

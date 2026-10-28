@@ -14,6 +14,10 @@ const LOOK_AROUND_SECONDS := 6.0
 const SEARCH_ARRIVAL_RADIUS := 17.0
 const TRAVEL_SPEED := 54.0
 const ACCELERATION := 75.0
+const GRAVITY_AVOID_RADIUS := 190.0
+const GRAVITY_ESCAPE_SPEED := 95.0
+const GRAVITY_ESCAPE_ACCELERATION := 195.0
+var escaping_gravity := false
 const TURRET_TURN_RATE := 7.5
 const SHOT_INVESTIGATION_RANGE := 260.0
 const AIM_TOLERANCE := 0.12
@@ -185,19 +189,27 @@ func step(delta: float, player_position: Vector2, arena: Node2D) -> void:
 			spotted_once = false
 			scan_anchor = turret_angle
 
+	# Survival takes priority over sentry/attack/search destinations.
+	# Even idle sentries actively flee the well's dangerous inner region.
+	escaping_gravity = position.distance_to(arena.gravity_well.position) < GRAVITY_AVOID_RADIUS
+	if escaping_gravity:
+		destination = arena.gravity_escape_waypoint(position, COLLISION_RADIUS, GRAVITY_AVOID_RADIUS + 35.0)
+		should_move = position.distance_to(destination) > 5.0
+
 	var desired_velocity := Vector2.ZERO
 	if should_move:
 		var waypoint: Vector2 = arena.approach_waypoint(position, destination, COLLISION_RADIUS)
 		if position.distance_to(waypoint) > 8.0:
-			var approach_speed := TRAVEL_SPEED
-			if searching:
+			var approach_speed := GRAVITY_ESCAPE_SPEED if escaping_gravity else TRAVEL_SPEED
+			if searching and not escaping_gravity:
 				# Decelerate before reaching the reported position instead of
 				# overshooting it and drifting away while looking around.
 				var runway := maxf(0.0, position.distance_to(search_goal) - SEARCH_ARRIVAL_RADIUS)
 				approach_speed = minf(TRAVEL_SPEED, sqrt(2.0 * ACCELERATION * runway))
 			desired_velocity = position.direction_to(waypoint) * approach_speed
 	desired_velocity = arena.avoid_drones(self, desired_velocity)
-	velocity = velocity.move_toward(desired_velocity, ACCELERATION * delta)
+	var acceleration: float = GRAVITY_ESCAPE_ACCELERATION if escaping_gravity else ACCELERATION
+	velocity = velocity.move_toward(desired_velocity, acceleration * delta)
 	velocity = arena.move_body(self, velocity, COLLISION_RADIUS, delta)
 
 	if can_see_player:
