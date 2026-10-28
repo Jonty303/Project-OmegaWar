@@ -48,6 +48,20 @@ var upgrade_counts: Dictionary = {}
 const DIFFICULTY_OPTIONS := ["count", "damage", "speed", "health"]
 var difficulty_levels := {"count":0, "damage":0, "speed":0, "health":0}
 var last_difficulty := "NONE"
+
+# The separate flight-test scene opts into these settings; classic mode
+# and its comprehensive smoke checks continue to use their old behaviour.
+var flight_test_mode := false
+const TEST_HULLS := ["Light", "Medium", "Heavy"]
+const TEST_ENGINES := ["Standard", "High-Thrust", "Vector Drive", "Overdrive"]
+var test_hull_index := 1
+var test_engine_index := 0
+var test_handling_multiplier := 1.0
+var test_controls_layer := CanvasLayer.new()
+var test_hull_picker := OptionButton.new()
+var test_engine_picker := OptionButton.new()
+var test_multiplier_slider := HSlider.new()
+var test_multiplier_readout := Label.new()
 const DIFFICULTY_PROJECTILE_FACTOR := 1.05
 const DIFFICULTY_HEALTH_STEP := 0.5
 
@@ -114,6 +128,7 @@ func _ready() -> void:
 	bind_pad_axis("thrust", JOY_AXIS_LEFT_Y, -1.0)
 	bind_pad_axis("brake", JOY_AXIS_LEFT_Y, 1.0)
 	bind_pad_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+	arena.flight_test_mode = flight_test_mode
 	add_child(arena)
 	add_child(sound_bus)
 	arena.wall_bounced.connect(on_wall_bounced)
@@ -130,6 +145,8 @@ func _ready() -> void:
 	add_child(status_hud)
 	setup_pause_menu()
 	setup_bonus_menu()
+	if flight_test_mode:
+		setup_flight_test_controls()
 	reset()
 
 func setup_pause_menu() -> void:
@@ -206,8 +223,90 @@ func setup_bonus_menu() -> void:
 		bonus_buttons[i].focus_neighbor_bottom = bonus_buttons[after].get_path()
 	bonus_layer.visible = false
 
+func setup_flight_test_controls() -> void:
+	test_controls_layer.layer = 2
+	add_child(test_controls_layer)
+	var panel := PanelContainer.new()
+	panel.position = Vector2(899, 63)
+	panel.custom_minimum_size = Vector2(276, 230)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.02, 0.05, 0.09, 0.92)
+	style.border_color = Color(0.20, 0.65, 0.80, 0.8)
+	style.set_border_width_all(1)
+	style.set_content_margin_all(9)
+	panel.add_theme_stylebox_override("panel", style)
+	test_controls_layer.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 5)
+	panel.add_child(column)
+	var heading := Label.new()
+	heading.text = "FLIGHT LAB / LIVE LOADOUT"
+	column.add_child(heading)
+	var hull_label := Label.new()
+	hull_label.text = "Hull"
+	column.add_child(hull_label)
+	for hull_name in TEST_HULLS:
+		test_hull_picker.add_item(hull_name)
+	test_hull_picker.select(test_hull_index)
+	column.add_child(test_hull_picker)
+	var engine_label := Label.new()
+	engine_label.text = "Engine"
+	column.add_child(engine_label)
+	for engine_name in TEST_ENGINES:
+		test_engine_picker.add_item(engine_name)
+	test_engine_picker.select(test_engine_index)
+	column.add_child(test_engine_picker)
+	test_multiplier_readout.text = "Thrust / brake multiplier: 1.00x"
+	column.add_child(test_multiplier_readout)
+	test_multiplier_slider.min_value = 0.5
+	test_multiplier_slider.max_value = 3.0
+	test_multiplier_slider.step = 0.25
+	test_multiplier_slider.value = test_handling_multiplier
+	column.add_child(test_multiplier_slider)
+	var reset_motion := Button.new()
+	reset_motion.text = "RESET POSITION + VELOCITY"
+	reset_motion.pressed.connect(reset_flight_test_motion)
+	column.add_child(reset_motion)
+	test_hull_picker.item_selected.connect(change_test_hull)
+	test_engine_picker.item_selected.connect(change_test_engine)
+	test_multiplier_slider.value_changed.connect(change_test_multiplier)
+
+func change_test_hull(index: int) -> void:
+	test_hull_index = index
+	apply_flight_test_loadout()
+
+func change_test_engine(index: int) -> void:
+	test_engine_index = index
+	apply_flight_test_loadout()
+
+func change_test_multiplier(value: float) -> void:
+	test_handling_multiplier = value
+	test_multiplier_readout.text = "Thrust / brake multiplier: %.2fx" % value
+	apply_flight_test_loadout()
+
+func apply_flight_test_loadout() -> void:
+	if not flight_test_mode or not is_instance_valid(ship):
+		return
+	ship.configure(TEST_HULLS[test_hull_index], TEST_ENGINES[test_engine_index], test_handling_multiplier)
+	update_hud()
+
+func reset_flight_test_motion() -> void:
+	if not flight_test_mode or not is_instance_valid(ship):
+		return
+	ship.position = Vector2(220, 425)
+	ship.velocity = Vector2.ZERO
+	ship.rotation = 0.0
+	ship.invulnerable = 2.0
+	update_hud()
+
 func finish_wave() -> void:
 	if bonus_active or game_over or dying or wave <= 0:
+		return
+	if flight_test_mode:
+		# Keep the test repeatable: no upgrade screens or difficulty scaling.
+		waiting_for_wave = true
+		wave_delay = 2.5
+		update_hud()
 		return
 	# Fractional hull restoration preserves precise shield-first damage
 	# values. Ammunition recovers by half of the TOTAL equipped capacity.
@@ -303,6 +402,8 @@ func reset() -> void:
 	if is_instance_valid(ship):
 		ship.free()
 	ship = Ship.new()
+	if flight_test_mode:
+		ship.configure(TEST_HULLS[test_hull_index], TEST_ENGINES[test_engine_index], test_handling_multiplier)
 	ship.position = Vector2(220, 425)
 	add_child(ship)
 	score = 0
@@ -499,23 +600,23 @@ func resolve_collisions() -> void:
 		var enemy = enemies[i]
 		var offset: Vector2 = ship.position - enemy.position
 		var distance := offset.length()
-		var minimum: float = Ship.COLLISION_RADIUS + enemy.COLLISION_RADIUS
+		var minimum: float = ship.collision_radius + enemy.COLLISION_RADIUS
 		if distance >= minimum:
 			continue
 		var normal := offset / distance if distance > 0.001 else Vector2.RIGHT
 		var correction := normal * ((minimum - distance) * 0.5 + 0.1)
-		if not arena.blocked(ship.position + correction, Ship.COLLISION_RADIUS):
+		if not arena.blocked(ship.position + correction, ship.collision_radius):
 			ship.position += correction
 		if not arena.blocked(enemy.position - correction, enemy.COLLISION_RADIUS):
 			enemy.position -= correction
 		var closing_speed := maxf(0.0, -(ship.velocity - enemy.velocity).dot(normal))
 		if closing_speed <= 0.0:
 			continue
-		const SHIP_MASS := 1.0
+		var ship_mass: float = ship.mass
 		var enemy_mass: float = 2.2 if enemy.is_repair_bot else 1.25
 		const RESTITUTION := 0.55
-		var impulse := (1.0 + RESTITUTION) * closing_speed / (1.0 / SHIP_MASS + 1.0 / enemy_mass)
-		ship.velocity += normal * impulse / SHIP_MASS
+		var impulse := (1.0 + RESTITUTION) * closing_speed / (1.0 / ship_mass + 1.0 / enemy_mass)
+		ship.velocity += normal * impulse / ship_mass
 		enemy.velocity -= normal * impulse / enemy_mass
 		var impact_point: Vector2 = (ship.position + enemy.position) * 0.5
 		spawn_debris(impact_point, Color(1.0, 0.8, 0.45), clampf(closing_speed / 120.0, 0.7, 1.6))
@@ -729,14 +830,14 @@ func detonate_rocket(rocket: Node2D) -> void:
 	# Radial shockwave: all teams, including the launching player, are hit.
 	# Ship invulnerability is honored, exactly as for any other damage source.
 	var ship_distance: float = origin.distance_to(ship.position)
-	if ship.visible and ship_distance < radius + Ship.COLLISION_RADIUS:
-		var falloff: float = clampf(1.0 - ship_distance / (radius + Ship.COLLISION_RADIUS), 0.0, 1.0)
+	if ship.visible and ship_distance < radius + ship.collision_radius:
+		var falloff: float = clampf(1.0 - ship_distance / (radius + ship.collision_radius), 0.0, 1.0)
 		var away: Vector2 = (ship.position - origin).normalized()
 		if away.is_zero_approx():
 			away = -rocket.velocity.normalized()
 			if away.is_zero_approx():
 				away = Vector2.UP
-		ship.velocity += away * strength * falloff
+		ship.velocity += away * strength * falloff / ship.mass
 		ship.hit(damage * falloff)
 
 	for index in range(enemies.size() - 1, -1, -1):
@@ -873,6 +974,17 @@ func start_wave() -> void:
 	wave += 1
 	waiting_for_wave = false
 	wave_delay = 0.0
+	if flight_test_mode:
+		# Two or three ordinary Local Drones, never an escalating swarm.
+		for i in range(2 + wave % 2):
+			var test_enemy := Enemy.new()
+			test_enemy.position = safe_position()
+			test_enemy.fire_timer = randf_range(2.0, 3.0)
+			test_enemy.turret_angle = randf_range(-PI, PI)
+			enemies.append(test_enemy)
+			add_child(test_enemy)
+		arena.set_drone_bodies(enemies)
+		return
 	# Early mixed waves: two to three sentries, one long-range missile
 	# variant and one support bot. Preserve the original 3-5 hostiles.
 	for i in range(randi_range(2, 3) + int(difficulty_levels["count"])):
@@ -938,6 +1050,16 @@ func update_hud() -> void:
 		ship.shields, ship.max_shields, ship.heat / ship.MAX_HEAT * 100.0,
 		ship.secondary.ammo, ship.secondary.MAX_AMMO, ship.secondary.cooldown
 	]
+	if flight_test_mode:
+		hud.text = "OMEGAWAR / FLIGHT LAB     TEST %02d     HOSTILES %02d     NO OBSTACLES" % [wave, enemies.size()]
+		status_hud.text = "%s / %s   SPEED %4.0f / %4.0f   THRUST %3.0f%%   RETRO %3.0f%%   HEAT %3.0f%%\nACCEL %5.0f   BRAKE %5.0f   TURN %.2f   MASS %.2f   HULL %.1f/%.0f   ROCKETS %d/%d" % [
+			ship.profile_name.to_upper(), ship.engine_name.to_upper(), ship.velocity.length(), ship.speed_limit,
+			Input.get_action_strength("thrust") * 100.0,
+			maxf(Input.get_action_strength("special"), Input.get_action_strength("brake")) * 100.0,
+			ship.heat / ship.MAX_HEAT * 100.0, ship.acceleration * ship.thrust_multiplier,
+			ship.braking, ship.rotation_speed, ship.mass, ship.hull, ship.max_hull,
+			ship.secondary.ammo, ship.secondary.MAX_AMMO
+		]
 	if dying or paused or game_over or bonus_active:
 		banner.text = ""
 	elif waiting_for_wave and wave > 0:
