@@ -69,11 +69,11 @@ func advance(delta: float, arena: Node2D) -> Array[Dictionary]:
 				# Core/asteroid fallback for a future nonempty test arena.
 				heading = -heading
 			heading = heading.normalized()
-			if actual <= 0.0001:
-				# Avoid a zero-distance lock at a wall.
-				var inward: Vector2 = from + heading * 0.1
-				points.append(inward)
-				travelled += 0.1
+			# Always move just inside the reflected surface: the generic
+			# clipping routine otherwise sees a zero-distance intersection.
+			var inward: Vector2 = to + heading * 0.25
+			points.append(inward)
+			travelled += 0.25
 		else:
 			# Travel is reflected by walls, not by the procedural wiggle.
 			pass
