@@ -33,6 +33,8 @@ const MISSILE_FUEL_LIFE := 7.5
 const BROADSIDE_INTERVAL := 0.56
 const SHELL_SPEED := 390.0
 const BEAM_EXPAND_SPEED := 1450.0
+const BEAM_SHIELD_DAMAGE := 26.0
+const BEAM_HULL_DAMAGE := 26.0
 const BATTERY_RANGE := 800.0
 const BATTERY_HALF_ARC := PI / 3.0
 const TRACKING_HALF_ARC := 5.0 * PI / 12.0
@@ -74,6 +76,11 @@ var beam_total := 0.0
 var beam_linger := 0.0
 var beam_power := 0.0
 var beam_hit_targets: Dictionary = {}
+var beam_absorption_point := Vector2.ZERO
+var beam_absorption_timer := 0.0
+var beam_scars: Array[Dictionary] = []
+var smoke: Array[Dictionary] = []
+var smoke_tick := 0.0
 var port_cooldown := 0.0
 var starboard_cooldown := 0.0
 var port_flash := 0.0
@@ -211,6 +218,11 @@ func reset_test() -> void:
     beam_charging = false
     beam_recovery = 0.0
     beam_path.clear()
+    beam_hit_targets.clear()
+    beam_absorption_timer = 0.0
+    beam_scars.clear()
+    smoke.clear()
+    smoke_tick = 0.0
     port_cooldown = 0.0
     starboard_cooldown = 0.0
     shots.clear()
@@ -312,6 +324,7 @@ func _physics_process(delta: float) -> void:
     advance_shots(delta)
     advance_missiles(delta)
     advance_beam(delta)
+    update_beam_damage_effects(delta)
     recharge_shields(delta)
     update_ion_trails(delta)
     check_encounter_result()
@@ -928,6 +941,7 @@ func fire_beam(power: float) -> void:
     beam_power = power
     beam_path.clear()
     beam_hit_targets.clear()
+    beam_absorption_timer = 0.0
     beam_visible = 0.0
     beam_total = 0.0
     beam_linger = 0.30
@@ -973,27 +987,138 @@ func advance_beam(delta: float) -> void:
         return
     beam_visible = minf(beam_total, beam_visible + BEAM_EXPAND_SPEED * delta)
     var length_drawn := 0.0
+    var stopped_by_shield := false
     for i in range(1, beam_path.size()):
-        var start := beam_path[i - 1]
-        var finish := beam_path[i]
+        var start: Vector2 = beam_path[i - 1]
+        var finish: Vector2 = beam_path[i]
         var section := start.distance_to(finish)
         if length_drawn >= beam_visible:
             break
         var portion := minf(1.0, (beam_visible - length_drawn) / maxf(section, 0.001))
         finish = start.lerp(finish, portion)
         for j in range(targets.size()):
-            if beam_hit_targets.has(j) or float(targets[j]["hp"]) <= 0.0:
+            if beam_hit_targets.has(j) or bool(targets[j]["destroyed"]):
                 continue
-            var target_pos: Vector2 = targets[j]["pos"]
+            var enemy: Dictionary = targets[j]
+            var target_pos: Vector2 = enemy["pos"]
             var near := Geometry2D.get_closest_point_to_segment(target_pos, start, finish)
-            if near.distance_squared_to(target_pos) <= 55.0 * 55.0:
-                damage_target(j, 3.0 + 10.0 * beam_power, near)
+            var shielded := float(enemy["shields"]) > 0.0
+            var radius := float(enemy["radius"]) + (11.0 if shielded else 0.0)
+            if near.distance_squared_to(target_pos) <= radius * radius:
                 beam_hit_targets[j] = true
+                if shielded:
+                    # A shield absorbs the entire beam discharge even when
+                    # that discharge exhausts its remaining charge.
+                    damage_shield_from_beam(j, BEAM_SHIELD_DAMAGE, near)
+                    beam_total = length_drawn + start.distance_to(near)
+                    beam_visible = beam_total
+                    beam_absorption_point = near
+                    beam_absorption_timer = 0.48
+                    beam_linger = 0.42
+                    stopped_by_shield = true
+                    break
+                else:
+                    # Exposed hull: draw a cut through the ship, spawn
+                    # exit-wound debris, and continue the beam behind it.
+                    make_beam_penetration(j, start, finish)
+                    damage_target(j, BEAM_HULL_DAMAGE * beam_power, near)
+        if stopped_by_shield:
+            break
         length_drawn += section
     if beam_visible >= beam_total:
         beam_linger -= delta
         if beam_linger <= 0.0:
             beam_path.clear()
+
+func damage_shield_from_beam(index: int, amount: float, hit: Vector2) -> void:
+    var enemy: Dictionary = targets[index]
+    if bool(enemy["destroyed"]):
+        return
+    enemy["shields"] = maxf(0.0, float(enemy["shields"]) - amount)
+    enemy["shield_delay"] = 5.0
+    enemy["flash"] = 0.65
+    impacts.append({"pos": hit, "life": 0.32, "color": BEAM_COLOR})
+    create_explosion(hit, 6)
+
+func make_beam_penetration(index: int, begin: Vector2, finish: Vector2) -> void:
+    var enemy: Dictionary = targets[index]
+    var centre: Vector2 = enemy["pos"]
+    var heading: float = enemy["angle"]
+    var axis := (finish - begin).normalized()
+    if axis.length_squared() < 0.1:
+        return
+    # Intersection chord of an actual circular hull, including off-centre hits.
+    var axis_mid := begin + axis * (centre - begin).dot(axis)
+    var sideways := centre.distance_to(axis_mid)
+    var radius: float = enemy["radius"]
+    var chord_half := sqrt(maxf(0.0, radius * radius - sideways * sideways))
+    var entry := axis_mid - axis * chord_half
+    var exit_wound := axis_mid + axis * chord_half
+    beam_scars.append({
+        "index": index, "entry_local": (entry - centre).rotated(-heading),
+        "exit_local": (exit_wound - centre).rotated(-heading),
+        "life": 8.0, "max_life": 8.0
+    })
+    impacts.append({"pos": entry, "life": 0.32, "color": BEAM_COLOR})
+    impacts.append({"pos": exit_wound, "life": 0.32, "color": PORT_COLOR})
+    # Entry flashes; most incandescent fragments burst from the exit wound.
+    for n in range(12):
+        var spray := axis.rotated(randf_range(-0.58, 0.58))
+        debris.append({
+            "pos": exit_wound, "vel": spray * randf_range(90.0, 320.0),
+            "life": randf_range(0.8, 1.6), "max_life": 1.6,
+            "color": BEAM_COLOR if n % 3 == 0 else PORT_COLOR
+        })
+
+func update_beam_damage_effects(delta: float) -> void:
+    beam_absorption_timer = maxf(0.0, beam_absorption_timer - delta)
+    for i in range(beam_scars.size() - 1, -1, -1):
+        beam_scars[i]["life"] = float(beam_scars[i]["life"]) - delta
+        if float(beam_scars[i]["life"]) <= 0.0:
+            beam_scars.remove_at(i)
+    for i in range(smoke.size() - 1, -1, -1):
+        smoke[i]["pos"] = Vector2(smoke[i]["pos"]) + Vector2(smoke[i]["vel"]) * delta
+        smoke[i]["life"] = float(smoke[i]["life"]) - delta
+        if float(smoke[i]["life"]) <= 0.0:
+            smoke.remove_at(i)
+    smoke_tick -= delta
+    if smoke_tick > 0.0:
+        return
+    smoke_tick = 0.15
+    for scar in beam_scars:
+        var j: int = scar["index"]
+        if j < 0 or j >= targets.size() or bool(targets[j]["destroyed"]):
+            continue
+        var enemy: Dictionary = targets[j]
+        var emission: Vector2 = Vector2(enemy["pos"]) + Vector2(scar["exit_local"]).rotated(float(enemy["angle"]))
+        var drifting: Vector2 = enemy["velocity"]
+        smoke.append({
+            "pos": emission, "vel": drifting * 0.23 + Vector2(randf_range(-18.0, 18.0), randf_range(-24.0, 9.0)),
+            "life": randf_range(0.7, 1.5), "max_life": 1.5, "radius": randf_range(3.0, 7.0)
+        })
+
+func draw_smoke() -> void:
+    for puff in smoke:
+        var opacity := clampf(float(puff["life"]) / float(puff["max_life"]), 0.0, 1.0)
+        draw_circle(puff["pos"], float(puff["radius"]) * (2.0 - opacity),
+            Color(0.57, 0.65, 0.73, 0.19 * opacity))
+
+func draw_beam_scar_glow() -> void:
+    for scar in beam_scars:
+        var j: int = scar["index"]
+        if j < 0 or j >= targets.size() or bool(targets[j]["destroyed"]):
+            continue
+        var enemy: Dictionary = targets[j]
+        var centre: Vector2 = enemy["pos"]
+        var heading: float = enemy["angle"]
+        var from: Vector2 = centre + Vector2(scar["entry_local"]).rotated(heading)
+        var to: Vector2 = centre + Vector2(scar["exit_local"]).rotated(heading)
+        var intensity := clampf(float(scar["life"]) / 8.0, 0.0, 1.0)
+        draw_line(from, to, Color(1.0, 0.29, 0.10, 0.48 * intensity), 9.0, true)
+        draw_line(from, to, Color(1.0, 0.83, 0.43, 0.75 * intensity), 3.0, true)
+        draw_circle(from, 6.0, Color(1.0, 0.91, 0.65, 0.65 * intensity))
+        draw_circle(to, 8.0, Color(1.0, 0.47, 0.16, 0.75 * intensity))
+
 
 func damage_target(index: int, amount: float, at: Vector2) -> void:
     if bool(targets[index]["destroyed"]):
@@ -1023,10 +1148,12 @@ func _draw() -> void:
     draw_weapon_arcs()
     draw_ion_trails()
     draw_targets()
+    draw_smoke()
     draw_shots()
     draw_missiles()
     draw_ship()
     draw_beam()
+    draw_beam_scar_glow()
     draw_impacts()
     draw_debris()
     draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -1188,6 +1315,11 @@ func draw_beam() -> void:
         accumulated += section
     draw_circle(head, 8.0, Color(0.20, 0.74, 1.0, 0.32))
     draw_circle(head, 3.7, Color(0.94, 1.0, 1.0))
+    if beam_absorption_timer > 0.0:
+        var flare := clampf(beam_absorption_timer / 0.48, 0.0, 1.0)
+        draw_circle(beam_absorption_point, 16.0 + (1.0 - flare) * 14.0, Color(0.13, 0.68, 1.0, flare * 0.46))
+        draw_arc(beam_absorption_point, 22.0 + (1.0 - flare) * 18.0,
+            0.0, TAU, 28, Color(0.84, 0.97, 1.0, flare), 3.0, true)
 
 func draw_impacts() -> void:
     for impact in impacts:
