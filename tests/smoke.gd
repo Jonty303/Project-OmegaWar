@@ -939,6 +939,116 @@ func run() -> void:
 		shot.free()
 	game.shots.clear()
 
+	# The new non-solid singularity bends movement and projectiles, but
+	# its peak acceleration is always weaker than standard player thrust.
+	var field = game.arena.gravity_well
+	check(field.position.is_equal_approx(Vector2(846, 613)), "Compact gravity well occupies lower-right open arena")
+	check(not game.arena.blocked(field.position, 0.0), "Gravity well is not an impassable obstacle")
+	check(field.MAX_PULL < game.Ship.THRUST_ACCELERATION, "Base ship has enough thrust to escape strongest field")
+	var sample_above: Vector2 = field.position + Vector2(0, -95)
+	var sample_pull: Vector2 = game.arena.gravity_at(sample_above)
+	check(sample_pull.y > 20.0 and absf(sample_pull.x) < 0.01, "Pull accelerates a nearby craft toward singularity")
+	check(game.arena.gravity_at(Vector2(150, 200)).is_zero_approx(), "Gravity has limited range and no global drag")
+	check(game.arena.gravity_at(field.position).is_zero_approx(), "Softened gravity has no central numerical singularity")
+	var outer_pull: Vector2 = game.arena.gravity_at(field.position + Vector2(220, 0))
+	check(outer_pull.length() < sample_pull.length(), "Gravity smoothly attenuates toward field edge")
+	game.ship.position = field.position + Vector2(42, 0)
+	game.ship.rotation = PI / 2.0
+	game.ship.velocity = Vector2.ZERO
+	Input.action_press("thrust")
+	for escape_frame in range(65):
+		game.arena.pull_body(game.ship, 1.0 / 60.0)
+		game.ship.step(1.0 / 60.0, game.arena)
+	Input.action_release("thrust")
+	check(game.ship.velocity.x > 0.0 and game.ship.position.x > field.position.x + 42.0, "Holding thrust outward escapes gravity well")
+	check(game.ship.velocity.length() <= game.Ship.MAX_SPEED + 0.01, "Gravity never bypasses ship's speed cap")
+	game.ship.position = Vector2(150, 600)
+	game.ship.rotation = 0.0
+	game.ship.velocity = Vector2.ZERO
+
+	var pulled_drone = game.Enemy.new()
+	pulled_drone.position = field.position + Vector2(105, 0)
+	game.arena.pull_body(pulled_drone, 0.15)
+	check(pulled_drone.velocity.x < -1.0, "All drone movement types receive inward gravitational acceleration")
+	pulled_drone.free()
+
+	game.spawn_shot(Vector2(830, 485), Vector2(500, 0), false)
+	check(game.shots.size() == 1, "Gravity test creates a projectile")
+	game.step_shots(0.10)
+	if not game.shots.is_empty():
+		check(game.shots[0].velocity.y > 1.0, "Pulse Laser path curves downward toward black hole")
+	for projectile in game.shots:
+		projectile.free()
+	game.shots.clear()
+
+	var pulled_rocket = game.Rocket.new()
+	pulled_rocket.position = Vector2(795, 485)
+	pulled_rocket.velocity = Vector2(350, 0)
+	game.add_child(pulled_rocket)
+	game.rockets.append(pulled_rocket)
+	game.step_rockets(0.10)
+	check(game.rockets.has(pulled_rocket) and pulled_rocket.velocity.y > 1.0, "Unguided rocket trajectory bends gravitationally")
+	for projectile in game.rockets:
+		projectile.free()
+	game.rockets.clear()
+
+	var pulled_homing = game.HomingMissile.new()
+	pulled_homing.position = Vector2(795, 485)
+	pulled_homing.velocity = Vector2(375, 0)
+	game.add_child(pulled_homing)
+	game.homing_missiles.append(pulled_homing)
+	game.ship.position = Vector2(1090, 485)
+	game.step_homing_missiles(0.10)
+	check(game.homing_missiles.has(pulled_homing) and pulled_homing.velocity.y > 1.0, "Guided missile also feels gravity despite steering")
+	for projectile in game.homing_missiles:
+		projectile.free()
+	game.homing_missiles.clear()
+	game.ship.position = Vector2(220, 425)
+
+	# Four automatic difficulty modifiers are independently cumulative.
+	# Explicitly test all four, even though the live wave choice is random.
+	game.reset()
+	check(game.increase_difficulty("count"), "Enemy-count escalation is supported")
+	check(game.increase_difficulty("damage"), "Enemy weapon damage escalation is supported")
+	check(game.increase_difficulty("speed"), "Enemy projectile speed escalation is supported")
+	check(game.increase_difficulty("health"), "Enemy hull escalation is supported")
+	check(not game.increase_difficulty("not_an_option"), "Unknown escalation cannot mutate difficulty")
+	check(game.difficulty_levels["count"] == 1 and game.difficulty_levels["health"] == 1, "Enemy count and health escalation store independent levels")
+	check(is_equal_approx(game.enemy_damage(1.0), 1.05), "Enemy shots and missiles gain five percent damage")
+	check(is_equal_approx(game.enemy_shot_speed(225.0), 236.25), "Enemy bullet speed increases five percent")
+	game.increase_difficulty("damage")
+	check(is_equal_approx(game.enemy_damage(1.0), 1.1025), "Weapon damage buffs stack multiplicatively")
+	game.start_wave()
+	check(game.enemies.size() >= 5 and game.enemies.size() <= 6, "One enemy-count upgrade adds one ordinary drone")
+	var boosted_local := false
+	var boosted_repair := false
+	var boosted_missile := false
+	for hostile in game.enemies:
+		if hostile.is_repair_bot:
+			boosted_repair = is_equal_approx(hostile.max_health, 6.5)
+		elif hostile.is_missile_drone:
+			boosted_missile = is_equal_approx(hostile.max_health, 3.5)
+		else:
+			boosted_local = is_equal_approx(hostile.max_health, 2.5)
+	check(boosted_local and boosted_repair and boosted_missile, "Enemy health buff applies to all three drone types")
+	var ranged_enemy = game.LongRangeDrone.new()
+	ranged_enemy.position = Vector2(400, 235)
+	ranged_enemy.turret_angle = 0.0
+	game.add_child(ranged_enemy)
+	game.launch_enemy_homing_missile(ranged_enemy)
+	check(game.homing_missiles.size() == 1, "Upgraded hostile missile launches")
+	if not game.homing_missiles.is_empty():
+		var boosted_guided = game.homing_missiles[0]
+		check(is_equal_approx(boosted_guided.cruise_speed, 393.75), "Missile steering retains five percent speed upgrade")
+		check(is_equal_approx(boosted_guided.damage, 1.1025), "Missile explosion gains cumulative damage upgrade")
+	for projectile in game.homing_missiles:
+		projectile.free()
+	game.homing_missiles.clear()
+	ranged_enemy.free()
+	game.reset()
+	check(game.difficulty_levels["damage"] == 0 and game.difficulty_levels["health"] == 0 and game.difficulty_levels["count"] == 0, "Run reset clears all enemy scaling")
+	check(game.last_difficulty == "NONE", "New run clears difficulty notification")
+
 	# Start a real wave, then isolate the final drone for collision tests.
 	# This also exercises the actual last-enemy wave-clear transition.
 	game.start_wave()
@@ -1002,6 +1112,8 @@ func run() -> void:
 
 	game._physics_process(0.01)
 	check(game.bonus_active and game.bonus_layer.visible, "Final enemy triggers an interactive wave bonus before countdown")
+	check(game.difficulty_levels.values().reduce(func(accum, value): return accum + value, 0) == 1, "Exactly one random enemy difficulty modifier is applied per completed wave")
+	check(game.bonus_title.text.contains("NEXT WAVE:") and game.last_difficulty != "NONE", "Wave bonus shows the randomized enemy scaling result")
 	check(game.waiting_for_wave and is_equal_approx(game.wave_delay, 5.0), "Next wave waits five seconds after a bonus selection")
 	check(game.bonus_choices.size() == 3, "Upgrade screen offers exactly three choices")
 	var selected_upgrade_ids := {}
