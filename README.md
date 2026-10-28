@@ -4,7 +4,7 @@
 
 A separate capital-ship combat prototype in a **6,000 × 4,200** world. Open `project.godot` and press **F5**. The classic baseline branch remains untouched.
 
-This iteration adds a **testable sensor progression** and **destructible, mobile asteroids**. Previous heavy-weapon and flight changes remain, including a straight spinal beam, homing missile swarms, automatically firing broadsides, persistent shield collapse and reverse thrust. The two moving hostiles remain: a slow broadside cruiser and a nimble forward-gun frigate. The world remains 6,000 × 4,200 units with an FPS overlay.
+This iteration adds a **testable sensor progression** and **destructible, mobile asteroids**. Previous heavy-weapon and flight changes remain, including a straight spinal beam, homing missile swarms, automatically firing broadsides, persistent shield collapse and reverse thrust. The two moving hostiles remain: a slow broadside cruiser and a nimble forward-gun frigate. The world remains 6,000 × 4,200 units with an FPS overlay. **The test flagship now starts at (1250, 950)**, clear of nearby rocks and approximately 2,290 units from the cruiser / 1,875 units from the frigate, rather than starting in immediate combat range.
 
 ## Xbox-style controller
 
@@ -66,6 +66,7 @@ A direct collision with a sufficiently fast asteroid, or impact from a final fra
 - **Tap Y / Space** to arm a **5-second automatic countdown**. The ship progressively surrenders propulsion power during the charge. The beam fires itself when the countdown reaches zero: there is **no hold/release requirement**.
 - **Tap again before firing** to abort. Cancellation dumps the charge and imposes a short recovery cooldown.
 - The spinal beam is **straight and true**, with no waviness or wandering. At a world boundary, it can reflect into another straight segment. Asteroids fracture instantly as the beam passes through; shield surfaces stop it precisely at the interception point.
+- **Steering/propulsion are locked during the brief beam discharge**, keeping the firing path aligned to the flagship's bow as it finishes expanding. Normal controls resume after the beam effect ends. This also prevents the ship visibly rotating across its own fixed beam.
 - If it meets an **active enemy shield**, the shield takes very heavy damage and **absorbs the entire discharge**. Even if this shot depletes the shield, it does not punch through in that same shot; the flare marks the shield's position.
 - If the target's **shield is already depleted**, the beam inflicts **massive hull damage**, visually cuts through the ship's silhouette with a bright entry-to-exit wound, and **continues beyond** to potentially damage another ship.
 - Penetrated vessels vent glowing debris and a small smoke/atmosphere trail from the breach. Damage to each hull is applied only once per discharge, never once per rendering frame.
@@ -85,13 +86,14 @@ A direct collision with a sufficiently fast asteroid, or impact from a final fra
 - Player and enemy ships leave **longer, thicker, brighter blue-white ion trails** aligned with *actual velocity*, not nose direction; faster motion leaves a more pronounced wake. Trail particles persist for about **0.46–1.24 seconds** depending on speed.
 - Both friendly and hostile ships suffer **kinetic asteroid impact damage directly to hull** at sufficient approach speeds. Shields do not protect against asteroid collisions; low-speed grazing causes little or no harm.
 - **Every hull-damaging hit throws off physical debris**, whether the source is a bullet, missile or future bomb. Shield-only hits remain clean. Fragments inherit some ship velocity and spray away from the entry point. The same generic ship-damage path supports later weapon types.
+- For the beam-turning death investigation, a temporary **HIT** label records the latest player damage source and amount. If the flagship is destroyed, **FINAL HIT** identifies the recorded cause: hostile shell, hostile missile, missile blast, asteroid collision, asteroid fragment or a **beam-shattered asteroid fragment**. The beam itself never directly damages the flagship; its rock fragments can still legitimately strike the hull.
 - The bars above enemy ships are ordered **shields on top, hull underneath**. The main HUD still displays **hull on the far left, followed by shields**.
 - Both hostiles retain hull HP and shields. **A shield reduced to zero goes permanently offline for the remainder of the battle**, for both enemies and player. Partial shields only regenerate very slowly (**0.35 shield HP/second**, after **6 seconds** without further damage). The HUD labels depleted shields **OFFLINE**; there is no shield-restart ability in this pass. Future skills, properties or upgrades may provide an explicit restart/recharge mechanism. Impacts, shield flashes, debris, and victory/defeat states remain.
 
 ## Playtest checklist
 
 1. With the ship stationary, pull the left stick down: the vessel should accelerate **stern first**, show **bright blue bow thrusters**, and leave a longer trail in the correct direction. Compare reverse with stronger forward propulsion.
-2. Tap **Y** once: observe the five-second countdown and propulsion loss, then automatic discharge. Start another charge and press **Y** again to verify cancellation and cooldown.
+2. Tap **Y** once: observe the five-second countdown and propulsion loss, then automatic discharge. Try rotating the stick during the actual beam expansion: the flagship should maintain its firing heading until the discharge finishes, then accept turning again. Start another charge and press **Y** again to verify cancellation and cooldown.
 3. Hit enemy shields with the beam: it should **terminate with a bright shield flare**, not pass through. When shields collapse, they should **stay OFFLINE** for the whole encounter even after waiting; the next beam should penetrate the exposed hull, leaving a glowing breach and debris.
 4. Tap **A**: watch the missiles drift for one second, then ignite and arc toward moving enemies. Near-misses should detonate with weaker splash damage.
 5. Toggle **V** and wear down a large asteroid with cannon fire; it should show damage, fracture into **three medium** rocks, then smaller pieces when struck again. Verify final fragments can strike ships and bypass shields.
@@ -101,6 +103,7 @@ A direct collision with a sufficiently fast asteroid, or impact from a final fra
 9. Wait for the hostile frigate to launch its **two-missile salvo**. Activate a broadside, orient the enemy missiles into its arc and watch the point-defence guns track and **explode** incoming missiles. Verify the splash can affect nearby targets, and that bullets don't destroy friendly missiles.
 10. Confirm any bullet, missile or beam strike that damages hull produces **visible flying fragments**. Shield-only hits should not shed hull plating.
 11. Confirm shield bar position above hull; test automatic broadside firing, enemy manoeuvres and FPS with the missile salvo active.
+12. Check the new distant flagship start and verify that pressing **R** restores this same position. If unexpected damage or death occurs during a beam, note the **HIT / FINAL HIT** label: `BEAM-SHATTERED ROCK` identifies secondary shrapnel, while hostile fire and actual asteroid collisions are reported separately.
 
 ## Deferred
 
