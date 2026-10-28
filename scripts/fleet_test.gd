@@ -965,40 +965,71 @@ func fire_beam(power: float) -> void:
     beam_linger = 0.30
     beam_recovery = 1.15
 
+    # A geometrically straight ray. Only world-boundary ricochets may
+    # change its direction: there is no sinusoidal bending or steering.
     var direction := Vector2.UP.rotated(ship_angle)
     var cursor := ship_pos + direction * 64.0
     beam_path.append(cursor)
-    var requested_range := lerpf(340.0, 1150.0, power)
-    var travelled := 0.0
-    var rebounds := 0
-    while travelled < requested_range:
-        # A subtly wandering, growing beam rather than an instant straight ray.
-        var waviness := sin(travelled * 0.027 + time_passed * 4.0) * 0.045
-        var step_vector := direction.rotated(waviness) * 10.0
-        var proposed := cursor + step_vector
-        if not FIELD.has_point(proposed):
-            if rebounds >= 2:
-                break
-            if proposed.x <= FIELD.position.x or proposed.x >= FIELD.end.x:
-                direction.x = -direction.x
-            if proposed.y <= FIELD.position.y or proposed.y >= FIELD.end.y:
-                direction.y = -direction.y
-            rebounds += 1
-            proposed = cursor + direction * 10.0
-            if not FIELD.has_point(proposed):
-                break
-        var absorbed := false
-        for rock in asteroids:
-            if proposed.distance_squared_to(Vector2(rock["pos"])) <= pow(float(rock["radius"]) + 4.0, 2.0):
-                absorbed = true
-                break
-        if absorbed:
+    var remaining := lerpf(340.0, 1150.0, power)
+    for rebound in range(3):
+        if remaining <= 0.001:
             break
-        cursor = proposed
-        beam_path.append(cursor)
-        travelled += 10.0
-    beam_total = travelled
+        var x_edge := INF
+        var y_edge := INF
+        if direction.x > 0.00001:
+            x_edge = (FIELD.end.x - cursor.x) / direction.x
+        elif direction.x < -0.00001:
+            x_edge = (FIELD.position.x - cursor.x) / direction.x
+        if direction.y > 0.00001:
+            y_edge = (FIELD.end.y - cursor.y) / direction.y
+        elif direction.y < -0.00001:
+            y_edge = (FIELD.position.y - cursor.y) / direction.y
+        var distance_to_wall := minf(x_edge, y_edge)
+        var segment_length := minf(remaining, distance_to_wall)
+        if segment_length <= 0.001:
+            break
+        var blocked := false
+        # Find the FIRST rock intercept along this exact straight segment.
+        for rock in asteroids:
+            var centre: Vector2 = rock["pos"]
+            var radius: float = float(rock["radius"]) + 4.0
+            var difference := cursor - centre
+            var projection := difference.dot(direction)
+            var discriminant := projection * projection - (difference.length_squared() - radius * radius)
+            if discriminant < 0.0:
+                continue
+            var hit_distance := -projection - sqrt(discriminant)
+            if hit_distance >= 0.0 and hit_distance < segment_length:
+                segment_length = hit_distance
+                blocked = true
+        var endpoint := cursor + direction * segment_length
+        if segment_length > 0.001:
+            beam_path.append(endpoint)
+            beam_total += segment_length
+            remaining -= segment_length
+        if blocked or segment_length < distance_to_wall - 0.001 or rebound >= 2:
+            break
+        # Mirror reflection at the exact arena edge, not a nearby grid step.
+        if absf(x_edge - distance_to_wall) <= 0.001:
+            direction.x = -direction.x
+        if absf(y_edge - distance_to_wall) <= 0.001:
+            direction.y = -direction.y
+        cursor = endpoint
     sound_bus.play("missile")
+
+func beam_circle_entry(segment_start: Vector2, segment_end: Vector2, centre: Vector2, radius: float) -> Vector2:
+    var vector := segment_end - segment_start
+    var length := vector.length()
+    if length <= 0.001:
+        return segment_start
+    var ray := vector / length
+    var offset := segment_start - centre
+    var projection := offset.dot(ray)
+    var discriminant := projection * projection - (offset.length_squared() - radius * radius)
+    if discriminant < 0.0:
+        return Geometry2D.get_closest_point_to_segment(centre, segment_start, segment_end)
+    var entry_distance := clampf(-projection - sqrt(discriminant), 0.0, length)
+    return segment_start + ray * entry_distance
 
 func advance_beam(delta: float) -> void:
     if beam_path.size() < 2:
@@ -1027,10 +1058,11 @@ func advance_beam(delta: float) -> void:
                 if shielded:
                     # A shield absorbs the entire beam discharge even when
                     # that discharge exhausts its remaining charge.
-                    damage_shield_from_beam(j, BEAM_SHIELD_DAMAGE, near)
-                    beam_total = length_drawn + start.distance_to(near)
+                    var shield_impact := beam_circle_entry(start, finish, target_pos, radius)
+                    damage_shield_from_beam(j, BEAM_SHIELD_DAMAGE, shield_impact)
+                    beam_total = length_drawn + start.distance_to(shield_impact)
                     beam_visible = beam_total
-                    beam_absorption_point = near
+                    beam_absorption_point = shield_impact
                     beam_absorption_timer = 0.48
                     beam_linger = 0.42
                     stopped_by_shield = true
