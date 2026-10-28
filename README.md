@@ -1,48 +1,75 @@
-# Omega War: Fleet Command — first playable test
+# Omega War: Fleet Command — First Contact
 
-This exploratory branch tests **one heavy player-controlled warship** in a large, scrolling battlefield before introducing fleet AI or campaign progression. Three capital-sized cruiser silhouettes serve as stationary gunnery targets. It was branched from `codex/omega-war-classic-baseline`; the classic game remains on that branch and its scene/scripts have not been overwritten.
+**Branch:** `codex/omega-war-fleet-combat`  
+**Engine:** Godot 4.5.2  
+**Scope:** First playable, single-flagship combat experiment (not the fleet campaign yet).
 
-## Start
+The original `codex/omega-war-classic-baseline` is unchanged. This branch boots the separate `scenes/fleet_test.tscn` gunnery/combat scene when you press **F5** from `project.godot`.
 
-Open `project.godot` using **Godot 4.5.2** and press **F5**. The project now opens `scenes/fleet_test.tscn` by default. The earlier classic level remains available as `scenes/main.tscn`.
+## First Contact: what to test
 
-## Controls
+Pilot a deliberately heavy flagship through a **6,000 × 4,200** world against two moving enemies:
 
-| Keyboard | Joypad | Action |
+- A **heavy cruiser** with port/starboard batteries. It accelerates and turns slowly, closes the distance when too far away, attempts to establish a broadside at engagement range, and retreats when the player gets too close.
+- A **smaller frigate**, faster and more agile, with a forward gun. It attempts to approach and turn onto the flagship.
+- Both have hull and **recharging shields**, collisions against asteroid cover, basic gravity-well avoidance, weapon cooldowns and finite firing arcs. They aim using a simple predictive lead rather than perfect hitscan accuracy.
+
+The ship is smaller on screen (0.52× starting camera zoom), with smooth tracking and a strategic radar. The starfield, asteroid drawings, grid and gravity rings are in a **cached scenery layer** for performance.
+
+## Controller layout — left-stick piloting, face-button fire orders
+
+| Xbox-layout face button | Action | Equivalent keyboard |
 | --- | --- | --- |
-| W / Up | Left stick up / A | Main thrusters |
-| S / Down | Left stick down / B | Brakes |
-| A / D or Left / Right | Left stick X / D-pad | Slow, momentum-based rotation |
-| Q | X | Fire **port** battery (two projectile cannons) |
-| E | Y | Fire **starboard** battery (two projectile cannons) |
-| **Hold and release Space** | Hold and release RT | Charge and fire **bow beam** |
-| - / = | — | Zoom out / in for different fleet-scale framing |
-| R | — | Reset test |
+| **Left stick up** | Main thrust | W / Up |
+| **Left stick down** | Brake | S / Down |
+| **Left stick left/right** | Rotate heavy hull | A/D or Left/Right |
+| **X (left face)** | Toggle **port battery** automatic fire order | Q |
+| **B (right face)** | Toggle **starboard battery** automatic fire order | E |
+| **Y (upper face)** | **Hold to charge** bow beam, release to fire | Hold/release Space |
+| **A (lower face)** | **Cease fire** on both side batteries | C |
+| — | Toggle visible target/firing arc overlays | V |
+| — | Change tactical camera zoom | - / = |
+| — | Reset the engagement | R |
 
-## Test behaviour
+The **D-pad and triggers are deliberately unassigned** in this test, reserving them for future shield-direction and command-menu controls. Face-button positions are used as the mnemonic: left = port, right = starboard, top = bow, bottom = cease.
 
-- **Epic-scale open theatre:** the world is **6,000 × 4,200 units** (roughly 5.5 times the previous test width and 7.2 times its height). A smooth tracking camera starts at **0.52× zoom**, making the capital ship about 60 pixels long on screen while keeping three other capital-sized target hulls visible. **- / =** changes zoom from 0.38× to 0.78×. A tactical radar shows the world beyond the camera.
-- **Heavy flight dynamics:** acceleration is 54 world-units/s², maximum speed is 112 units/s; maximum turn rate is **0.55 radians/s** (about 31.5°/s) with a limited angular acceleration of 0.43 radians/s². There is no ordinary passive translational drag; you must brake or change direction to remove drift. A distant boundary prevents leaving the test theatre; it should not normally intrude into view.
-- **Bow spinal beam:** hold the trigger to accumulate charge for up to **2.4 seconds**. Power diverted to the weapon progressively reduces thrust and slows the ship; full charge brings it to a stop. **Release to fire** a snake-like, visibly extending beam. Charge determines beam reach and damage. It can rebound from the test arena boundary up to twice. A brief cooldown follows.
-- **Two independent broadsides:** Q and E each fire a pair of solid projectiles from their respective side's hardpoints, with independent **0.56-second** reload intervals. They fire sideways relative to the hull, not toward the cursor. There are **no rear weapons**.
-- **Capital ship targets:** one ahead and one on each beam/broadside line; they have warship silhouettes, armour bars, and respawn after destruction. They are **stationary, unarmed targets**, not implemented enemy AI.
-- **Environmental space:** sparse, physically blocking asteroid clusters and one distant gravity well (pulling the ship and deflecting shells) give the theatre landmarks and room for later turrets, mines and fleet encounters. The beam is absorbed by asteroids but can rebound from the arena perimeter.
-- **Presentation:** vector-style warship, glowing charging emitter, beam and shell trails, hit markers and very quiet procedural sounds borrowed from the classic project.
-- **Performance pass (October 28):** static grid, starfield, asteroid silhouettes and gravity rings are now rendered by `scripts/fleet_environment.gd` in a separate **cached CanvasItem**; the main ship scene only redraws moving objects. The static scenery's camera transform changes without rebuilding the draw commands. Star count is reduced from 1,800 to 850. The top-right HUD shows current **FPS** to compare performance on your machine. Battlefield size and ship zoom are unchanged.
+## Automatic batteries
 
-## Deliberately not in this first test
+- Tap **Q / X** or **E / B** to order the corresponding battery to **open fire**. Tap again to order **cease fire**. Both side batteries can be active simultaneously.
+- Each battery independently **acquires an enemy within its 120° firing arc**, no farther than **800 units**, with an unobstructed line of sight past asteroids.
+- Acquired targets persist within a slightly wider **150° tracking arc**, but guns only shoot a tracked ship when it's actually within the narrower firing arc.
+- If there is no valid target, the battery still fires outward along the default perpendicular side direction. This uses ammunition, so remember to cease fire.
+- Each battery fires a two-shell volley every **0.56 seconds**, with a finite magazine (18 shells) replenishing gradually (1.7 shells/second). They keep attempting to fire automatically as long as the order is active.
+- **V** overlays the firing arcs, tracking arcs and enemy weapon arcs; faint lines reveal current battery target locks.
+- Projectiles from either side are physically simulated and take strong deflection inside the gravity well; rocks block them.
 
-Enemy AI, fighters, fleet orders, ship acquisition, health/damage to the player, turrets, mines, upgrades and battle progression. Those depend on how the **weight and weapon feel** test goes.
+## Bow spinal weapon
 
-For the wider experiment and later feature proposals, read [the Fleet Command concept](docs/fleet-command-concept.md).
+Keep holding **Y / Space** to charge the beam for up to **2.4 seconds**. Propulsion gradually declines, then the ship stops at full charge. Release to fire an extending, slightly serpentine beam. Charge strength determines range and damage. The beam is physically obstructed by asteroids, and may bounce off the distant world boundary. There is a recovery cooldown.
 
-## Suggested quick test
+This is still the previous simple **charge-and-release** behaviour, not the future timed captain's firing order, final commitment phase or costly cancellation mechanic.
 
-1. From spawn, observe **four capital-scale ships** in a large view: the flagship and three stationary target cruisers.
-2. Hold **Q** to fire north; hold **E** to fire south. Their projectile batteries have independent cooldowns.
-3. Hold **Space** until full. Watch speed drop to zero; release to grow the bow beam toward the eastern cruiser.
-4. Thrust away from the centre and turn: the smooth camera tracks the player while the minimap shows where you are in the much larger arena.
-5. Fly toward one of the distant asteroid clusters or the gravity anomaly. Try **- / =** to compare framing.
-6. Hold thrust while charging the beam: propulsion should fade as charge builds. Tap **R** to repeat.
+## Hull, shields and destruction
 
-**Validation note:** The changes are committed to GitHub, but Godot is not available in this authoring environment to run a headless benchmark. Please test with F5 and check the FPS counter at the top right. In particular, compare idle FPS with constant movement/turning and continuous broadside fire. If performance remains poor, the next step should be a captured Godot Profiler frame rather than further speculative visual changes.
+- Player flagship: **30 hull + 18 shields**.
+- Cruiser: **34 hull + 15 shields**.
+- Frigate: **18 hull + 7 shields**.
+- Shields absorb damage before hull. After a damage-free delay they begin to regenerate. Shield arcs brighten momentarily under fire.
+- Enemy projectiles and impacts are tinted red; player batteries use orange/blue.
+- Explosions spawn short-lived debris, and victory is achieved by destroying both enemy ships. Losing the flagship ends the test.
+- Press **R** to restart immediately.
+
+## Performance and diagnostics
+
+- The 6,000 × 4,200 arena stays intact.
+- Static background geometry is drawn by `scripts/fleet_environment.gd` in a separate cached `CanvasItem`. Only dynamic objects need repeated draw commands.
+- The overlay shows **FPS**. Compare stationary, normal piloting, two sides firing, the beam discharging and viewing range arcs with V.
+- If the framerate is still poor, use the Godot Profiler to distinguish script time from renderer time before attempting further reductions in scale.
+
+## Deferred intentionally
+
+Allied corvettes, captain personalities, bridge voice acknowledgements, two-level command radial menu, directional shield transfer, mines, fixed turrets, complex weapon effects (fires / penetration / subsystem disruption), campaign progression and ship upgrades.
+
+These are follow-on experiments once directional ship combat and auto-targeting are satisfying. See [the larger design concept](docs/fleet-command-concept.md).
+
+**Test status:** Committed to GitHub. No Godot runtime was available in the authoring environment to execute an engine smoke test, so run the branch in Godot 4.5.2 to confirm parsing and FPS.
