@@ -3,7 +3,7 @@ extends Node2D
 ## The classic Omega War scripts and scene remain unchanged on this branch.
 
 const SoundBus = preload("res://scripts/sound_bus.gd")
-const Environment = preload("res://scripts/fleet_environment.gd")
+const FleetScenery = preload("res://scripts/fleet_environment.gd")
 # Broad, scrolling theatre: 5x the original width, >7x its height.
 const FIELD := Rect2(0.0, 0.0, 6000.0, 4200.0)
 const VIEW_SIZE := Vector2(1200.0, 800.0)
@@ -53,7 +53,7 @@ var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
 var targets: Array[Dictionary] = []
 var asteroids: Array[Dictionary] = []
-var environment := Environment.new()
+var environment := FleetScenery.new()
 var sound_bus := SoundBus.new()
 
 func _ready() -> void:
