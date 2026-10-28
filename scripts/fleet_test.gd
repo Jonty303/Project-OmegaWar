@@ -3,7 +3,12 @@ extends Node2D
 ## The classic Omega War scripts and scene remain unchanged on this branch.
 
 const SoundBus = preload("res://scripts/sound_bus.gd")
-const FIELD := Rect2(58.0, 112.0, 1084.0, 580.0)
+# Broad, scrolling theatre: 5x the original width, >7x its height.
+const FIELD := Rect2(0.0, 0.0, 6000.0, 4200.0)
+const VIEW_SIZE := Vector2(1200.0, 800.0)
+const INITIAL_ZOOM := 0.52
+const GRAVITY_CENTER := Vector2(4490.0, 2310.0)
+const GRAVITY_RADIUS := 520.0
 const THRUST := 54.0
 const MAX_SPEED := 112.0
 const BRAKE := 110.0
@@ -20,7 +25,10 @@ const PORT_COLOR := Color(1.0, 0.69, 0.37)
 const STARBOARD_COLOR := Color(0.37, 0.84, 1.0)
 const BEAM_COLOR := Color(0.54, 0.93, 1.0)
 
-var ship_pos := Vector2(450, 406)
+var ship_pos := Vector2(2500.0, 2100.0)
+var camera_pos := Vector2(2500.0, 2100.0)
+var camera_offset := Vector2.ZERO
+var view_zoom := INITIAL_ZOOM
 var ship_angle := PI / 2.0
 var velocity := Vector2.ZERO
 var angular_velocity := 0.0
@@ -44,6 +52,7 @@ var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
 var targets: Array[Dictionary] = []
 var stars: PackedVector2Array = PackedVector2Array()
+var asteroids: Array[Dictionary] = []
 var sound_bus := SoundBus.new()
 
 func _ready() -> void:
@@ -51,8 +60,9 @@ func _ready() -> void:
     add_child(sound_bus)
     var rng := RandomNumberGenerator.new()
     rng.seed = 48672
-    for i in range(105):
-        stars.append(Vector2(rng.randf_range(12.0, 1188.0), rng.randf_range(100.0, 711.0)))
+    for i in range(1800):
+        stars.append(Vector2(rng.randf_range(8.0, FIELD.end.x - 8.0), rng.randf_range(8.0, FIELD.end.y - 8.0)))
+    setup_asteroids()
     setup_targets()
     queue_redraw()
 
@@ -69,6 +79,8 @@ func make_inputs() -> void:
     key_action("fc_starboard", KEY_E)
     key_action("fc_beam", KEY_SPACE)
     key_action("fc_reset", KEY_R)
+    key_action("fc_zoom_out", KEY_MINUS)
+    key_action("fc_zoom_in", KEY_EQUAL)
     pad_button("fc_thrust", JOY_BUTTON_A)
     pad_button("fc_brake", JOY_BUTTON_B)
     pad_button("fc_port", JOY_BUTTON_X)
@@ -99,15 +111,35 @@ func pad_axis(action: String, axis: int, sign: float) -> void:
     event.axis_value = sign
     InputMap.action_add_event(action, event)
 
+func setup_asteroids() -> void:
+    # Sparse tactical landmarks, not a cramped maze.
+    asteroids = []
+    var locations := [
+        Vector3(1640, 1590, 105), Vector3(1810, 1690, 46),
+        Vector3(2020, 1150, 67), Vector3(3760, 1620, 90),
+        Vector3(3940, 1720, 52), Vector3(3500, 2840, 82),
+        Vector3(3630, 2980, 37), Vector3(1320, 2700, 73),
+        Vector3(4810, 3230, 108), Vector3(4670, 3120, 54),
+        Vector3(2920, 3480, 71), Vector3(5200, 1160, 92),
+        Vector3(740, 1300, 120), Vector3(5390, 2880, 74),
+        Vector3(2280, 3420, 48), Vector3(3210, 750, 67)
+    ]
+    for location in locations:
+        asteroids.append({"pos": Vector2(location.x, location.y), "radius": location.z})
+
 func setup_targets() -> void:
+    # Other capital-sized hulls in the starting view, deliberately inert
+    # until real fleet AI is introduced. Full HP/respawn gunnery targets.
     targets = [
-        {"pos": Vector2(905, 406), "hp": 28.0, "max_hp": 28.0, "respawn": 0.0, "flash": 0.0, "name": "BOW TARGET"},
-        {"pos": Vector2(442, 178), "hp": 18.0, "max_hp": 18.0, "respawn": 0.0, "flash": 0.0, "name": "PORT TARGET"},
-        {"pos": Vector2(465, 637), "hp": 18.0, "max_hp": 18.0, "respawn": 0.0, "flash": 0.0, "name": "STARBOARD TARGET"}
+        {"pos": Vector2(3350, 2100), "angle": -0.9, "hp": 42.0, "max_hp": 42.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER ALPHA"},
+        {"pos": Vector2(2450, 1440), "angle": 0.27, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER BETA"},
+        {"pos": Vector2(2490, 2760), "angle": -0.32, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER GAMMA"}
     ]
 
 func reset_test() -> void:
-    ship_pos = Vector2(450, 406)
+    ship_pos = Vector2(2500.0, 2100.0)
+    camera_pos = ship_pos
+    view_zoom = INITIAL_ZOOM
     ship_angle = PI / 2.0
     velocity = Vector2.ZERO
     angular_velocity = 0.0
@@ -126,6 +158,10 @@ func _physics_process(delta: float) -> void:
     sound_bus.advance(delta)
     if Input.is_action_just_pressed("fc_reset"):
         reset_test()
+    if Input.is_action_just_pressed("fc_zoom_out"):
+        view_zoom = maxf(0.38, view_zoom - 0.07)
+    if Input.is_action_just_pressed("fc_zoom_in"):
+        view_zoom = minf(0.78, view_zoom + 0.07)
 
     beam_recovery = maxf(0.0, beam_recovery - delta)
     port_cooldown = maxf(0.0, port_cooldown - delta)
@@ -144,6 +180,10 @@ func _physics_process(delta: float) -> void:
         beam_held = false
 
     update_ship(delta)
+    camera_pos = camera_pos.lerp(ship_pos, 1.0 - exp(-2.5 * delta))
+    var half_view := VIEW_SIZE * (0.5 / view_zoom)
+    camera_pos.x = clampf(camera_pos.x, FIELD.position.x + half_view.x, FIELD.end.x - half_view.x)
+    camera_pos.y = clampf(camera_pos.y, FIELD.position.y + half_view.y, FIELD.end.y - half_view.y)
     if Input.is_action_pressed("fc_port") and port_cooldown <= 0.0:
         fire_broadside(-1.0)
         port_cooldown = BROADSIDE_INTERVAL
@@ -175,6 +215,7 @@ func update_ship(delta: float) -> void:
     braking = brake_input > 0.05
     if thrusting:
         velocity += Vector2.UP.rotated(ship_angle) * THRUST * throttle * (1.0 - progress) * delta
+    velocity += gravity_at(ship_pos) * delta
     if braking:
         velocity = velocity.move_toward(Vector2.ZERO, BRAKE * brake_input * delta)
     # A charging spinal beam diverts propulsion power. At full charge,
@@ -187,17 +228,32 @@ func update_ship(delta: float) -> void:
     ship_pos += velocity * delta
     confine_ship()
 
+func gravity_at(pos: Vector2) -> Vector2:
+    var direction: Vector2 = GRAVITY_CENTER - pos
+    var distance := direction.length()
+    if distance < 8.0 or distance >= GRAVITY_RADIUS:
+        return Vector2.ZERO
+    var strength := 62.0 * pow(1.0 - distance / GRAVITY_RADIUS, 1.6)
+    return direction / distance * strength
+
 func confine_ship() -> void:
-    var left := FIELD.position.x + 45.0
-    var right := FIELD.end.x - 45.0
-    var top := FIELD.position.y + 66.0
-    var bottom := FIELD.end.y - 55.0
-    if ship_pos.x < left or ship_pos.x > right:
-        ship_pos.x = clampf(ship_pos.x, left, right)
+    var margin := 72.0
+    var clamped := Vector2(
+        clampf(ship_pos.x, FIELD.position.x + margin, FIELD.end.x - margin),
+        clampf(ship_pos.y, FIELD.position.y + margin, FIELD.end.y - margin))
+    if clamped.x != ship_pos.x:
         velocity.x = 0.0
-    if ship_pos.y < top or ship_pos.y > bottom:
-        ship_pos.y = clampf(ship_pos.y, top, bottom)
+    if clamped.y != ship_pos.y:
         velocity.y = 0.0
+    ship_pos = clamped
+    for rock in asteroids:
+        var centre: Vector2 = rock["pos"]
+        var minimum := float(rock["radius"]) + 42.0
+        var displacement := ship_pos - centre
+        if displacement.length_squared() < minimum * minimum:
+            var outward := displacement.normalized() if displacement.length() > 0.1 else Vector2.UP
+            ship_pos = centre + outward * minimum
+            velocity = velocity.slide(outward) * 0.75
 
 func fire_broadside(side: float) -> void:
     var outward := Vector2(side, 0.0).rotated(ship_angle)
@@ -214,18 +270,27 @@ func advance_shots(delta: float) -> void:
     for i in range(shots.size() - 1, -1, -1):
         var bullet: Dictionary = shots[i]
         var old: Vector2 = bullet["pos"]
+        bullet["vel"] = Vector2(bullet["vel"]) + gravity_at(old) * 6.0 * delta
         var next: Vector2 = old + Vector2(bullet["vel"]) * delta
         bullet["previous"] = old
         bullet["pos"] = next
         bullet["life"] = float(bullet["life"]) - delta
         var expired := float(bullet["life"]) <= 0.0 or not FIELD.has_point(next)
         if not expired:
+            for rock in asteroids:
+                var centre: Vector2 = rock["pos"]
+                var near_rock := Geometry2D.get_closest_point_to_segment(centre, old, next)
+                if near_rock.distance_squared_to(centre) <= pow(float(rock["radius"]), 2.0):
+                    impacts.append({"pos": near_rock, "life": 0.32, "color": MUTED})
+                    expired = true
+                    break
+        if not expired:
             for j in range(targets.size()):
                 if float(targets[j]["hp"]) <= 0.0:
                     continue
                 var target_pos: Vector2 = targets[j]["pos"]
                 var near: Vector2 = Geometry2D.get_closest_point_to_segment(target_pos, old, next)
-                if near.distance_squared_to(target_pos) <= 29.0 * 29.0:
+                if near.distance_squared_to(target_pos) <= 50.0 * 50.0:
                     damage_target(j, 1.0, near)
                     expired = true
                     break
@@ -265,6 +330,13 @@ func fire_beam(power: float) -> void:
             proposed = cursor + direction * 10.0
             if not FIELD.has_point(proposed):
                 break
+        var absorbed := false
+        for rock in asteroids:
+            if proposed.distance_squared_to(Vector2(rock["pos"])) <= pow(float(rock["radius"]) + 4.0, 2.0):
+                absorbed = true
+                break
+        if absorbed:
+            break
         cursor = proposed
         beam_path.append(cursor)
         travelled += 10.0
@@ -289,7 +361,7 @@ func advance_beam(delta: float) -> void:
                 continue
             var target_pos: Vector2 = targets[j]["pos"]
             var near := Geometry2D.get_closest_point_to_segment(target_pos, start, finish)
-            if near.distance_squared_to(target_pos) <= 33.0 * 33.0:
+            if near.distance_squared_to(target_pos) <= 55.0 * 55.0:
                 damage_target(j, 3.0 + 10.0 * beam_power, near)
                 beam_hit_targets[j] = true
         length_drawn += section
@@ -315,43 +387,95 @@ func advance_targets(delta: float) -> void:
                 target["hp"] = target["max_hp"]
 
 func _draw() -> void:
+    # Draw the world through a smoothly following, zoomed-out tactical camera.
+    # Keep HUD in screen space so text remains readable at epic-scale zoom.
+    draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color(0.010, 0.018, 0.034), true)
+    camera_offset = VIEW_SIZE * 0.5 - camera_pos * view_zoom
+    draw_set_transform(camera_offset, 0.0, Vector2.ONE * view_zoom)
     draw_background()
+    draw_gravity_well()
+    draw_asteroids()
     draw_targets()
     draw_shots()
     draw_ship()
     draw_beam()
     draw_impacts()
+    draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
     draw_hud()
 
 func draw_background() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(1200, 800)), Color(0.012, 0.020, 0.040), true)
+    # 6,000 x 4,200 units. The borders should not normally be in view.
+    draw_rect(FIELD, Color(0.015, 0.025, 0.048), true)
+    for x in range(0, int(FIELD.size.x) + 1, 400):
+        draw_line(Vector2(x, 0), Vector2(x, FIELD.end.y), Color(0.10, 0.17, 0.23, 0.22), 1.0)
+    for y in range(0, int(FIELD.size.y) + 1, 400):
+        draw_line(Vector2(0, y), Vector2(FIELD.end.x, y), Color(0.10, 0.17, 0.23, 0.22), 1.0)
     for i in range(stars.size()):
-        var brightness := 0.15 + float(i % 5) * 0.042
-        draw_circle(stars[i], 0.7 if i % 4 else 1.2, Color(brightness, brightness + 0.07, brightness + 0.15))
-    draw_rect(FIELD, Color(0.13, 0.25, 0.36, 0.60), false, 1.5)
-    draw_line(Vector2(0, 98), Vector2(1200, 98), Color(0.16, 0.27, 0.36), 1.0)
+        var brightness := 0.15 + float(i % 5) * 0.045
+        draw_circle(stars[i], 1.2 if i % 4 else 2.1, Color(brightness, brightness + 0.07, brightness + 0.15))
+    draw_rect(FIELD, Color(0.24, 0.38, 0.45, 0.48), false, 7.0)
+
+func draw_asteroids() -> void:
+    for i in range(asteroids.size()):
+        var rock: Dictionary = asteroids[i]
+        var centre: Vector2 = rock["pos"]
+        var radius: float = rock["radius"]
+        var outline := PackedVector2Array()
+        for n in range(10):
+            var theta := TAU * float(n) / 10.0
+            var shape := 0.84 + 0.15 * sin(float(i) * 2.17 + float(n) * 3.7)
+            outline.append(centre + Vector2.from_angle(theta) * radius * shape)
+        draw_colored_polygon(outline, Color(0.095, 0.137, 0.167))
+        var closed := outline.duplicate()
+        closed.append(outline[0])
+        draw_polyline(closed, Color(0.34, 0.45, 0.51), 3.0, true)
+        draw_line(centre + Vector2(-radius * 0.38, -radius * 0.18),
+            centre + Vector2(radius * 0.18, radius * 0.21),
+            Color(0.20, 0.29, 0.34), 3.0, true)
+
+func draw_gravity_well() -> void:
+    for r in [520.0, 365.0, 240.0, 125.0, 66.0]:
+        draw_arc(GRAVITY_CENTER, r, 0.0, TAU, 90,
+            Color(0.35, 0.32, 0.72, 0.13 if r >= 240.0 else 0.28), 2.8, true)
+    draw_circle(GRAVITY_CENTER, 32.0, Color(0.005, 0.007, 0.018))
+    draw_arc(GRAVITY_CENTER, 35.0, 0.0, TAU, 42, Color(0.54, 0.41, 0.92, 0.60), 4.0, true)
 
 func draw_targets() -> void:
     var font := ThemeDB.fallback_font
     for target in targets:
         var centre: Vector2 = target["pos"]
+        var angle: float = target["angle"]
         var alive := float(target["hp"]) > 0.0
-        var hit_flash := float(target["flash"])
-        var main_color := Color(0.89, 0.49, 0.39) if alive else Color(0.30, 0.36, 0.43)
-        if hit_flash > 0.0:
-            main_color = Color(1.0, 0.95, 0.75)
-        draw_circle(centre, 29.0, Color(0.10, 0.17, 0.22))
-        draw_arc(centre, 29.0, 0.0, TAU, 28, main_color, 2.0, true)
-        draw_arc(centre, 20.0, 0.0, TAU, 28, main_color.darkened(0.35), 1.5, true)
-        draw_line(centre + Vector2(-38, 0), centre + Vector2(38, 0), main_color.darkened(0.3), 1.0)
-        draw_line(centre + Vector2(0, -38), centre + Vector2(0, 38), main_color.darkened(0.3), 1.0)
-        draw_string(font, centre + Vector2(-57, -47), String(target["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
+        var hull_color := Color(0.44, 0.21, 0.24) if alive else Color(0.16, 0.19, 0.23)
+        var edge_color := Color(0.93, 0.54, 0.51) if alive else Color(0.32, 0.36, 0.40)
+        if float(target["flash"]) > 0.0:
+            edge_color = Color(1.0, 0.96, 0.76)
+        # Capital-ship silhouette at the same world scale as the flagship.
+        var points := PackedVector2Array()
+        for local in [
+            Vector2(0, -61), Vector2(23, -43), Vector2(30, -10),
+            Vector2(39, 23), Vector2(23, 55), Vector2(-23, 55),
+            Vector2(-39, 23), Vector2(-30, -10), Vector2(-23, -43)
+        ]:
+            points.append(centre + local.rotated(angle))
+        draw_colored_polygon(points, hull_color)
+        var closed := points.duplicate()
+        closed.append(points[0])
+        draw_polyline(closed, edge_color, 3.5, true)
+        draw_line(centre + Vector2(0, -46).rotated(angle),
+            centre + Vector2(0, 40).rotated(angle), edge_color.darkened(0.25), 4.0, true)
+        for side in [-1.0, 1.0]:
+            for y in [-22.0, 20.0]:
+                draw_line(centre + Vector2(side * 27, y).rotated(angle),
+                    centre + Vector2(side * 45, y).rotated(angle), edge_color, 4.0, true)
+        draw_string(font, centre + Vector2(-91, -91), String(target["name"]),
+            HORIZONTAL_ALIGNMENT_LEFT, -1, 20, MUTED)
         var ratio := float(target["hp"]) / float(target["max_hp"])
-        draw_rect(Rect2(centre + Vector2(-32, 40), Vector2(64, 4)), Color(0.11, 0.16, 0.20), true)
-        draw_rect(Rect2(centre + Vector2(-32, 40), Vector2(64 * ratio, 4)), main_color, true)
+        draw_rect(Rect2(centre + Vector2(-60, 69), Vector2(120, 7)), Color(0.08, 0.13, 0.18), true)
+        draw_rect(Rect2(centre + Vector2(-60, 69), Vector2(120 * ratio, 7)), edge_color, true)
 
 func draw_ship() -> void:
-    draw_set_transform(ship_pos, ship_angle, Vector2.ONE)
+    draw_set_transform(camera_offset + ship_pos * view_zoom, ship_angle, Vector2.ONE * view_zoom)
     if thrusting and charge < CHARGE_SECONDS:
         var jet := 15.0 + 10.0 * (0.5 + 0.5 * sin(time_passed * 38.0))
         for x in [-17.0, 17.0]:
@@ -386,7 +510,7 @@ func draw_ship() -> void:
     if progress > 0.0:
         draw_circle(Vector2(0, -59), 4.0 + progress * 12.0, Color(0.24, 0.78, 1.0, 0.23 + 0.25 * progress))
         draw_circle(Vector2(0, -59), 2.5 + progress * 5.0, BEAM_COLOR)
-    draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+    draw_set_transform(camera_offset, 0.0, Vector2.ONE * view_zoom)
 
 func draw_shots() -> void:
     for bullet in shots:
@@ -426,8 +550,8 @@ func draw_impacts() -> void:
 
 func draw_hud() -> void:
     var font := ThemeDB.fallback_font
-    draw_string(font, Vector2(32, 36), "FLEET COMMAND  /  FLAGSHIP GUNNERY TEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, WHITE)
-    draw_string(font, Vector2(32, 62), "HEAVY HULL   •   BOW SPINAL BEAM   •   DUAL PORT + STARBOARD BATTERIES   •   NO AFT GUNS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+    draw_string(font, Vector2(32, 36), "FLEET COMMAND  /  OPEN-THEATRE SCALE TEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, WHITE)
+    draw_string(font, Vector2(32, 62), "6,000 x 4,200 THEATRE   •   3 INERT CAPITAL TARGETS   •   ASTEROIDS + GRAVITY   •   NO AFT GUNS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
     var charge_ratio := charge / CHARGE_SECONDS
     var bar_pos := Vector2(815, 31)
     draw_string(font, bar_pos + Vector2(0, -1), "BOW BEAM CHARGE", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, BEAM_COLOR)
@@ -438,6 +562,23 @@ func draw_hud() -> void:
         beam_status = "FULL - SHIP STOPPED"
     draw_string(font, Vector2(815, 83), beam_status, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, WHITE)
     var velocity_text := "SPEED  %03d / %03d   TURN  %02d deg/s" % [roundi(velocity.length()), roundi(MAX_SPEED), roundi(absf(rad_to_deg(angular_velocity)))]
+    draw_string(font, Vector2(32, 713), "CAMERA %.2fx   •   THEATRE 6000 x 4200   •   POSITION %d / %d" % [view_zoom, roundi(ship_pos.x), roundi(ship_pos.y)], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
     draw_string(font, Vector2(32, 738), velocity_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
-    draw_string(font, Vector2(32, 768), "W/S thrust/brake  •  A/D turn  •  Q port broadside  •  E starboard broadside  •  HOLD/RELEASE SPACE beam  •  R reset", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, MUTED)
-    draw_string(font, Vector2(32, 790), "Gamepad: left stick steer / thrust, A thrust, B brake, X/Y broadsides, RT beam. Target hulks respawn.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
+    draw_string(font, Vector2(32, 768), "W/S thrust/brake  •  A/D turn  •  Q/E broadsides  •  HOLD/RELEASE SPACE beam  •  - / = zoom  •  R reset", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, MUTED)
+    draw_string(font, Vector2(32, 790), "Gamepad: left stick steer / thrust, A thrust, B brake, X/Y broadsides, RT beam. Cruiser targets respawn.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
+    draw_radar()
+
+func draw_radar() -> void:
+    var chart := Rect2(1044, 564, 128, 90)
+    draw_rect(chart, Color(0.04, 0.08, 0.13, 0.88), true)
+    draw_rect(chart, Color(0.32, 0.49, 0.56, 0.8), false, 1.0)
+    for rock in asteroids:
+        var normalized: Vector2 = Vector2(rock["pos"]) / FIELD.size
+        draw_circle(chart.position + normalized * chart.size, 1.1, Color(0.33, 0.41, 0.46))
+    draw_circle(chart.position + GRAVITY_CENTER / FIELD.size * chart.size, 2.0, Color(0.55, 0.42, 0.85))
+    for target in targets:
+        if float(target["hp"]) > 0.0:
+            draw_circle(chart.position + Vector2(target["pos"]) / FIELD.size * chart.size, 2.4, Color(0.98, 0.51, 0.43))
+    draw_circle(chart.position + ship_pos / FIELD.size * chart.size, 3.1, Color(0.52, 0.96, 1.0))
+    var font := ThemeDB.fallback_font
+    draw_string(font, chart.position + Vector2(1, -7), "THEATRE OVERVIEW", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
