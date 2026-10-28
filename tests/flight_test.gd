@@ -126,8 +126,22 @@ func run() -> void:
 	reflected.advance(0.5, game.arena)
 	check(reflected.expired(), "Exhausted beam fades away")
 
+	# Damage is applied along the new travelling segments, exactly once
+	# per target even while the visible filament persists.
+	var target = game.Enemy.new()
+	target.position = Vector2(970, 425)
+	game.add_child(target)
+	game.enemies.append(target)
+	var damage_test = Serpent.new()
+	damage_test.configure(Vector2(1120, 425), Vector2.RIGHT)
+	game.add_child(damage_test)
+	game.serpentine_beams.append(damage_test)
+	game.step_serpentine_beams(0.35)
+	check(not game.enemies.has(target), "Bounced beam can strike a drone after reflecting")
+	check(damage_test.hit_targets.size() == 1, "The beam hits a given enemy once")
+
 	game.reset()
-	check(game.ship.profile_name == "Heavy" and game.test_weapon_index == 0, "Reset retains chosen chassis and weapon")
+	check(game.ship.profile_name == "Light" and game.test_weapon_index == 0 and game.test_secondary_index == 1, "Reset retains chassis, primary and secondary selections")
 	game.start_wave()
 	check(game.enemies.size() == 3, "First wave has exactly three local drones")
 	var all_local := true
