@@ -1080,7 +1080,7 @@ func advance_missiles(delta: float) -> void:
             var centre: Vector2 = rock["pos"]
             var near := Geometry2D.get_closest_point_to_segment(centre, previous, next)
             if near.distance_squared_to(centre) < pow(float(rock["radius"]) + 3.0, 2.0):
-                missile_detonate(next, -1, false, hostile)
+                missile_detonate(near, -1, false, hostile)
                 removed = true
                 break
         if not removed and bool(m["ignited"]):
@@ -1107,12 +1107,28 @@ func advance_missiles(delta: float) -> void:
         else:
             missiles[i] = m
 
+func blast_asteroids(at: Vector2, direct_power: float) -> void:
+    # Missiles carry area-effect demolition charges; a fresh large rock
+    # might survive one blast, but an already-cracked rock can disintegrate.
+    var original_count := asteroids.size()
+    for j in range(original_count - 1, -1, -1):
+        var rock: Dictionary = asteroids[j]
+        var centre: Vector2 = rock["pos"]
+        var distance_to_surface := at.distance_to(centre) - float(rock["radius"])
+        if distance_to_surface >= ASTEROID_BLAST_RADIUS:
+            continue
+        var proximity := clampf(1.0 - maxf(distance_to_surface, 0.0) / ASTEROID_BLAST_RADIUS, 0.0, 1.0)
+        var damage := direct_power * (0.40 + 0.60 * proximity)
+        var impulse := (centre - at).normalized() * 95.0
+        damage_asteroid(j, damage, at, impulse, "missile")
+
 func missile_detonate(pos: Vector2, direct_target: int, direct_hit: bool, hostile: bool = false) -> void:
     # The same real detonation is used for missile near-misses, impacts and
     # gunfire interception; it never silently despawns the missile.
     impacts.append({"pos": pos, "life": 0.32, "color": PORT_COLOR if hostile else BEAM_COLOR})
     missile_blasts.append({"pos": pos, "life": 0.48, "max_life": 0.48, "hostile": hostile})
     create_explosion(pos, 9)
+    blast_asteroids(pos, ASTEROID_MISSILE_DAMAGE)
     if hostile:
         if not player_destroyed:
             if direct_hit:
@@ -1280,11 +1296,13 @@ func advance_shots(delta: float) -> void:
         bullet["life"] = float(bullet["life"]) - delta
         var expired := float(bullet["life"]) <= 0.0 or not FIELD.has_point(next)
         if not expired:
-            for rock in asteroids:
+            for j in range(asteroids.size()):
+                var rock: Dictionary = asteroids[j]
                 var centre: Vector2 = rock["pos"]
                 var near_rock := Geometry2D.get_closest_point_to_segment(centre, old, next)
                 if near_rock.distance_squared_to(centre) <= pow(float(rock["radius"]), 2.0):
-                    impacts.append({"pos": near_rock, "life": 0.32, "color": MUTED})
+                    var shot_dir := Vector2(bullet["vel"]).normalized()
+                    damage_asteroid(j, float(bullet["damage"]), near_rock, shot_dir * 55.0, "bullet")
                     expired = true
                     break
         if not expired and shot_intercepts_missile(old, next, bool(bullet["hostile"]), delta):
@@ -1313,6 +1331,7 @@ func advance_shots(delta: float) -> void:
 
 func fire_beam(power: float) -> void:
     beam_power = power
+    beam_fire_time = time_passed
     beam_path.clear()
     beam_hit_targets.clear()
     beam_absorption_timer = 0.0
@@ -1344,26 +1363,14 @@ func fire_beam(power: float) -> void:
         var segment_length := minf(remaining, distance_to_wall)
         if segment_length <= 0.001:
             break
-        var blocked := false
-        # Find the FIRST rock intercept along this exact straight segment.
-        for rock in asteroids:
-            var centre: Vector2 = rock["pos"]
-            var radius: float = float(rock["radius"]) + 4.0
-            var difference := cursor - centre
-            var projection := difference.dot(direction)
-            var discriminant := projection * projection - (difference.length_squared() - radius * radius)
-            if discriminant < 0.0:
-                continue
-            var hit_distance := -projection - sqrt(discriminant)
-            if hit_distance >= 0.0 and hit_distance < segment_length:
-                segment_length = hit_distance
-                blocked = true
+        # Unlike shells, the spinal beam penetrates rock. Breakup is
+        # resolved as its luminous head reaches each rock during advance_beam.
         var endpoint := cursor + direction * segment_length
         if segment_length > 0.001:
             beam_path.append(endpoint)
             beam_total += segment_length
             remaining -= segment_length
-        if blocked or segment_length < distance_to_wall - 0.001 or rebound >= 2:
+        if segment_length < distance_to_wall - 0.001 or rebound >= 2:
             break
         # Mirror reflection at the exact arena edge, not a nearby grid step.
         if absf(x_edge - distance_to_wall) <= 0.001:
@@ -1430,6 +1437,18 @@ func advance_beam(delta: float) -> void:
                     damage_target(j, BEAM_HULL_DAMAGE * beam_power, near)
         if stopped_by_shield:
             break
+        # A fully charged beam instantly pierces any already-existing rock
+        # it reaches. New child rocks have the same birth time as this
+        # discharge, so one beam cannot recursively explode them forever.
+        for rock_index in range(asteroids.size() - 1, -1, -1):
+            var rock: Dictionary = asteroids[rock_index]
+            if float(rock["born"]) >= beam_fire_time:
+                continue
+            var rock_centre: Vector2 = rock["pos"]
+            var closest := Geometry2D.get_closest_point_to_segment(rock_centre, start, finish)
+            var radius: float = rock["radius"]
+            if closest.distance_squared_to(rock_centre) <= radius * radius:
+                damage_asteroid(rock_index, 999.0, closest, (finish - start).normalized() * 160.0, "beam")
         length_drawn += section
     if beam_visible >= beam_total:
         beam_linger -= delta
