@@ -687,6 +687,30 @@ func run() -> void:
 	patient.free()
 	medic.free()
 
+	# A locked Repair Bot must follow a moving, injured patient, without
+	# falling idle simply because the patient temporarily leaves tether range.
+	var follower = game.RepairBot.new()
+	follower.position = Vector2(240, 275)
+	var mobile_patient = game.Enemy.new()
+	mobile_patient.position = Vector2(470, 275)
+	mobile_patient.health = 1.0
+	game.add_child(follower)
+	game.add_child(mobile_patient)
+	var moving_allies: Array[Node2D] = [follower, mobile_patient]
+	game.arena.set_drone_bodies(moving_allies)
+	follower.step_support(0.40, moving_allies, game.arena)
+	check(follower.assigned_patient == mobile_patient and follower.velocity.x > 0.0, "Repair Bot constantly pursues a remote injured ally")
+	var first_follower_x: float = follower.position.x
+	mobile_patient.position = Vector2(620, 275)
+	follower.step_support(0.40, moving_allies, game.arena)
+	check(follower.position.x > first_follower_x and follower.assigned_patient == mobile_patient, "Repair Bot follows a moving patient, not stale coordinates")
+	for follow_frame in range(35):
+		follower.step_support(0.10, moving_allies, game.arena)
+	check(mobile_patient.health > 1.0, "Repair Bot reaches new patient position and resumes healing")
+	follower.free()
+	mobile_patient.free()
+	game.arena.set_drone_bodies(game.enemies)
+
 	# Repair Bot must remain assigned to its original patient, regardless of
 	# more convenient newcomers, until that patient is healed or destroyed.
 	var assigned_bot = game.RepairBot.new()

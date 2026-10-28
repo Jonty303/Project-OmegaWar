@@ -531,6 +531,7 @@ func defeat_enemy(index: int) -> void:
 	var enemy = enemies[index]
 	var tint := Color(0.25, 1.0, 0.55) if enemy.is_repair_bot else (Color(0.48, 0.66, 1.0) if enemy.is_missile_drone else Color(1.0, 0.5, 0.25))
 	spawn_debris(enemy.position, tint, 1.4, 16, 0.62)
+	sound_bus.play("explosion")
 	arena.apply_blast(enemy.position, 320.0, 100.0)
 	score += 200 if enemy.is_repair_bot else (150 if enemy.is_missile_drone else 100)
 	enemies.remove_at(index)
