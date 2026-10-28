@@ -4,9 +4,9 @@ extends Node
 # files, samples or dependencies. All effects are quieter than conventional
 # arcade sounds; rebound is deliberately barely audible.
 const RATE := 22050
-const VOLUMES := {"pulse":-26.0, "missile":-24.0, "explosion":-21.0, "rebound":-36.0}
-const LENGTHS := {"pulse":0.060, "missile":0.14, "explosion":0.30, "rebound":0.043}
-const MIN_INTERVAL := {"pulse":0.055, "missile":0.09, "explosion":0.075, "rebound":0.16}
+const VOLUMES := {"pulse":-26.0, "beam":-25.0, "missile":-24.0, "explosion":-21.0, "rebound":-36.0}
+const LENGTHS := {"pulse":0.060, "beam":0.19, "missile":0.14, "explosion":0.30, "rebound":0.043}
+const MIN_INTERVAL := {"pulse":0.055, "beam":0.18, "missile":0.09, "explosion":0.075, "rebound":0.16}
 var streams: Dictionary = {}
 var voices: Dictionary = {}
 var indices: Dictionary = {}
@@ -55,6 +55,8 @@ func synth(kind: String) -> AudioStreamWAV:
 		match kind:
 			"pulse":
 				tone = sin(TAU * (930.0 * time - 330.0 * time * progress))
+			"beam":
+				tone = 0.65 * sin(TAU * (470.0 * time + 660.0 * time * progress)) + 0.22 * sin(TAU * 94.0 * time)
 			"missile":
 				tone = 0.64 * sin(TAU * (410.0 * time - 185.0 * time * progress)) + 0.2 * sin(TAU * 125.0 * time)
 			"explosion":
