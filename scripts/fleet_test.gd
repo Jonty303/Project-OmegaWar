@@ -8,6 +8,8 @@ const FleetScenery = preload("res://scripts/fleet_environment.gd")
 const FIELD := Rect2(0.0, 0.0, 6000.0, 4200.0)
 const VIEW_SIZE := Vector2(1200.0, 800.0)
 const INITIAL_ZOOM := 0.52
+# Spacious combat test start, well clear of enemy weapons and asteroid fields.
+const PLAYER_TEST_SPAWN := Vector2(1250.0, 950.0)
 const GRAVITY_CENTER := Vector2(4490.0, 2310.0)
 const GRAVITY_RADIUS := 520.0
 const THRUST := 54.0
@@ -65,8 +67,8 @@ const PORT_COLOR := Color(1.0, 0.69, 0.37)
 const STARBOARD_COLOR := Color(0.37, 0.84, 1.0)
 const BEAM_COLOR := Color(0.54, 0.93, 1.0)
 
-var ship_pos := Vector2(2500.0, 2100.0)
-var camera_pos := Vector2(2500.0, 2100.0)
+var ship_pos := PLAYER_TEST_SPAWN
+var camera_pos := PLAYER_TEST_SPAWN
 var camera_offset := Vector2.ZERO
 var view_zoom := INITIAL_ZOOM
 var ship_angle := PI / 2.0
@@ -109,6 +111,10 @@ var player_hull := PLAYER_MAX_HULL
 var player_shields := PLAYER_MAX_SHIELDS
 var player_shield_delay := 0.0
 var player_shield_flash := 0.0
+var last_player_hit_cause := ""
+var last_player_hit_amount := 0.0
+var last_player_hit_shields := false
+var last_player_hit_timer := 0.0
 var encounter_finished := false
 var player_destroyed := false
 var show_arcs := false
@@ -343,7 +349,7 @@ func advance_fragments(delta: float) -> void:
         if not removed and not player_destroyed:
             var closest := Geometry2D.get_closest_point_to_segment(ship_pos, previous, next)
             if closest.distance_squared_to(ship_pos) <= pow(SHIP_RADIUS + float(piece["radius"]), 2.0):
-                damage_player_hull_direct(float(piece["damage"]), closest)
+                damage_player_hull_direct(float(piece["damage"]), closest, "ASTEROID FRAGMENT")
                 removed = true
         if not removed:
             for j in range(targets.size()):
@@ -420,7 +426,7 @@ func setup_targets() -> void:
     ]
 
 func reset_test() -> void:
-    ship_pos = Vector2(2500.0, 2100.0)
+    ship_pos = PLAYER_TEST_SPAWN
     camera_pos = ship_pos
     view_zoom = INITIAL_ZOOM
     ship_angle = PI / 2.0
@@ -453,6 +459,10 @@ func reset_test() -> void:
     player_hull = PLAYER_MAX_HULL
     player_shields = PLAYER_MAX_SHIELDS
     player_shield_delay = 0.0
+    last_player_hit_cause = ""
+    last_player_hit_amount = 0.0
+    last_player_hit_shields = false
+    last_player_hit_timer = 0.0
     port_order = false
     starboard_order = false
     port_target = -1
@@ -488,6 +498,7 @@ func _physics_process(delta: float) -> void:
     starboard_flash = maxf(0.0, starboard_flash - delta)
 
     sound_message_timer = maxf(0.0, sound_message_timer - delta)
+    last_player_hit_timer = maxf(0.0, last_player_hit_timer - delta)
     port_ammo = minf(AMMO_CAPACITY, port_ammo + AMMO_RECHARGE * delta)
     starboard_ammo = minf(AMMO_CAPACITY, starboard_ammo + AMMO_RECHARGE * delta)
     if Input.is_action_just_pressed("fc_cease"):
@@ -564,6 +575,15 @@ func _physics_process(delta: float) -> void:
     queue_redraw()
 
 func update_ship(delta: float) -> void:
+    # A spinal discharge locks the flagship's firing heading. The beam's
+    # geometric path is fixed at ignition, so allowing an immediate turn
+    # would make the ship appear to swing into its own ray.
+    if beam_path.size() > 1:
+        angular_velocity = 0.0
+        velocity = Vector2.ZERO
+        thrusting = false
+        braking = false
+        return
     var turn_input := Input.get_axis("fc_turn_left", "fc_turn_right")
     var progress := charge / CHARGE_SECONDS
     var desired_turn := turn_input * TURN_SPEED * (1.0 - 0.47 * progress)
@@ -623,11 +643,18 @@ func confine_ship() -> void:
             if impact_speed > ASTEROID_SAFE_IMPACT:
                 # Kinetic impact bypasses shields entirely.
                 var harm := clampf((impact_speed - ASTEROID_SAFE_IMPACT) * 0.115, 0.5, 10.0)
-                damage_player_hull_direct(harm, ship_pos - outward * 33.0)
+                damage_player_hull_direct(harm, ship_pos - outward * 33.0, "ASTEROID COLLISION")
 
-func damage_player_hull_direct(amount: float, at: Vector2) -> void:
+func record_player_hit(cause: String, amount: float, shield_only: bool) -> void:
+    last_player_hit_cause = cause
+    last_player_hit_amount = amount
+    last_player_hit_shields = shield_only
+    last_player_hit_timer = 4.0
+
+func damage_player_hull_direct(amount: float, at: Vector2, cause: String = "KINETIC IMPACT") -> void:
     if player_destroyed:
         return
+    record_player_hit(cause, amount, false)
     player_hull = maxf(0.0, player_hull - amount)
     impacts.append({"pos": at, "life": 0.32, "color": PORT_COLOR})
     spawn_hull_debris(at, ship_pos, velocity, amount)
@@ -1135,11 +1162,11 @@ func missile_detonate(pos: Vector2, direct_target: int, direct_hit: bool, hostil
     if hostile:
         if not player_destroyed:
             if direct_hit:
-                damage_player(MISSILE_DIRECT_DAMAGE, pos)
+                damage_player(MISSILE_DIRECT_DAMAGE, pos, "HOSTILE MISSILE")
             else:
                 var distance := pos.distance_to(ship_pos)
                 if distance < MISSILE_BURST_RADIUS:
-                    damage_player(MISSILE_BURST_DAMAGE * (1.0 - 0.55 * distance / MISSILE_BURST_RADIUS), pos)
+                    damage_player(MISSILE_BURST_DAMAGE * (1.0 - 0.55 * distance / MISSILE_BURST_RADIUS), pos, "MISSILE BLAST")
     elif direct_hit and direct_target >= 0 and not bool(targets[direct_target]["destroyed"]):
         damage_target(direct_target, MISSILE_DIRECT_DAMAGE, pos)
     else:
@@ -1198,7 +1225,7 @@ func recharge_shields(delta: float) -> void:
             enemy["shields"] = minf(float(enemy["max_shields"]), float(enemy["shields"]) + SHIELD_REGEN_RATE * delta)
         enemy["flash"] = maxf(0.0, float(enemy["flash"]) - delta)
 
-func damage_player(amount: float, at: Vector2) -> void:
+func damage_player(amount: float, at: Vector2, cause: String = "HOSTILE FIRE") -> void:
     if player_destroyed:
         return
     player_shield_delay = SHIELD_REGEN_DELAY
@@ -1207,6 +1234,7 @@ func damage_player(amount: float, at: Vector2) -> void:
     if absorbed > 0.0:
         player_shield_flash = 0.22
     var hull_damage := maxf(0.0, amount - absorbed)
+    record_player_hit(cause, amount, hull_damage <= 0.0)
     player_hull = maxf(0.0, player_hull - hull_damage)
     if hull_damage > 0.0:
         spawn_hull_debris(at, ship_pos, velocity, hull_damage)
@@ -1315,7 +1343,7 @@ func advance_shots(delta: float) -> void:
                 if not player_destroyed:
                     var near_ship := Geometry2D.get_closest_point_to_segment(ship_pos, old, next)
                     if near_ship.distance_squared_to(ship_pos) <= SHIP_RADIUS * SHIP_RADIUS:
-                        damage_player(float(bullet["damage"]), near_ship)
+                        damage_player(float(bullet["damage"]), near_ship, "HOSTILE SHELL")
                         expired = true
             else:
                 for j in range(targets.size()):
@@ -1931,6 +1959,11 @@ func draw_hud() -> void:
     draw_string(font, Vector2(1093, 29), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
     if sound_message_timer > 0.0:
         draw_string(font, Vector2(355, 130), sound_message, HORIZONTAL_ALIGNMENT_CENTER, 520, 19, WHITE)
+    if last_player_hit_timer > 0.0:
+        var hit_area := "SHIELDS" if last_player_hit_shields else "HULL"
+        draw_string(font, Vector2(670, 161), "HIT: %s  (%.1f TO %s)" % [
+            last_player_hit_cause, last_player_hit_amount, hit_area
+        ], HORIZONTAL_ALIGNMENT_LEFT, 500, 15, PORT_COLOR)
 
     draw_string(font, Vector2(25, 720), "HULL %02d/%02d" % [int(player_hull), int(PLAYER_MAX_HULL)],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 15, PORT_COLOR)
@@ -1956,7 +1989,10 @@ func draw_hud() -> void:
         draw_rect(Rect2(280, 303, 640, 126), Color(0.39, 0.72, 0.87), false, 2.0)
         draw_string(font, Vector2(310, 359), "FLAGSHIP DESTROYED" if player_destroyed else "VICTORY - ENEMY FLEET DEFEATED",
             HORIZONTAL_ALIGNMENT_CENTER, 580, 25, WHITE)
-        draw_string(font, Vector2(310, 399), "PRESS R TO RESTART", HORIZONTAL_ALIGNMENT_CENTER, 580, 18, MUTED)
+        draw_string(font, Vector2(310, 393), "PRESS R TO RESTART", HORIZONTAL_ALIGNMENT_CENTER, 580, 18, MUTED)
+        if player_destroyed:
+            draw_string(font, Vector2(310, 417), "FINAL HIT: " + last_player_hit_cause,
+                HORIZONTAL_ALIGNMENT_CENTER, 580, 16, PORT_COLOR)
     draw_radar()
     draw_scanner_indicators()
 
