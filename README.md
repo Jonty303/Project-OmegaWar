@@ -1,10 +1,10 @@
-# Omega War — Fleet Command: First Contact (Heavy Weapons Pass)
+# Omega War — Fleet Command: Scanner & Asteroid Field Pass
 
 **Godot 4.5.2** · Branch: `codex/omega-war-fleet-combat`
 
 A separate capital-ship combat prototype in a **6,000 × 4,200** world. Open `project.godot` and press **F5**. The classic baseline branch remains untouched.
 
-This pass focuses on the flagship's weapon roles, motion readability and destructive consequences. The two moving enemies remain: a slow broadside cruiser and a nimble forward-gun frigate. Asteroids and the gravity well remain on the map, with a cached static scenery layer and FPS overlay.
+This iteration adds a **testable sensor progression** and **destructible, mobile asteroids**. Previous heavy-weapon and flight changes remain, including a straight spinal beam, homing missile swarms, automatically firing broadsides, persistent shield collapse and reverse thrust. The two moving hostiles remain: a slow broadside cruiser and a nimble forward-gun frigate. The world remains 6,000 × 4,200 units with an FPS overlay.
 
 ## Xbox-style controller
 
@@ -19,17 +19,52 @@ This pass focuses on the flagship's weapon roles, motion readability and destruc
 | **A** (bottom face) | Launch a four-missile **cold-launch** aft salvo |
 | D-pad | Not assigned yet; reserved for directional shield controls |
 
-Keyboard: **W/S** forward/reverse, **A/D** turn, **Q/E** toggle port/starboard fire orders, **Space** press once to arm beam / press again to cancel, **F** launch missiles, **C** cease fire on both gun batteries, **V** show firing/targeting arcs, **-/=** zoom, **R** restart.
+Keyboard: **W/S** forward/reverse, **A/D** turn, **Q/E** toggle port/starboard fire orders, **Space** press once to arm beam / press again to cancel, **F** launch missiles, **C** cease fire on both gun batteries, **V** show firing/targeting arcs and asteroid integrity, **T** cycle scanner test tiers, **-/=** zoom, **R** restart. The face buttons and D-pad remain unchanged.
 
 ## Main batteries
 
 Port and starboard guns auto-acquire enemies within their 120° firing arcs and 800-unit range, respecting asteroid obstruction. They retain an existing lock within a slightly wider 150° targeting arc. Pressing the corresponding button toggles sustained fire; without a valid target they shoot straight outwards, consuming ammunition. Batteries have per-side ammo, cooldown and gradual ammunition replenishment. Active batteries now **prioritize an incoming hostile missile** within their firing arc and switch to point defence. A shell must physically intersect the missile's flight path to destroy it; the missile then explodes with a visible blast, debris and its regular proximity splash. The frigate periodically launches a small hostile salvo so this can be tested. Press **V** for the debug overlay showing firing/vision arcs, enemy arcs and target locks.
 
+## Scanner upgrades — off-screen contacts and incoming threats
+
+**Press T** to cycle four test modes. This is a temporary upgrade simulator, not a persistent progression/equipment screen. A ship's sensor range affects what appears on the radar as well as edge markers.
+
+| Scanner test tier | Detection range | New information |
+| --- | ---: | --- |
+| **Basic** | 1,100 units | Nearby enemy contacts on local radar, no off-screen arrows |
+| **Improved** | 1,900 units | Blue off-screen arrows for detected enemy contacts |
+| **Long Range** | 3,250 units | More distant enemy arrows with class and distance |
+| **Tactical** | 4,700 units | All previous features, plus **grouped red incoming missile warnings** and amber approaching gunfire warnings |
+
+The arrows sit on the playable viewport edge, pointing towards each detected off-screen target. Multiple missiles approaching from the same bearing are condensed into **MISSILES ×N** rather than spawning one arrow per missile; friendly ordnance is not flagged as incoming.
+
+**Deliberately deferred:** jamming, spoofed/uncertain detections, nebula sensor occlusion, counter-jamming and actual equipment upgrades. This pass separates sensor presentation from acquisition range so those mechanics can be added later without rewriting the UI.
+
+## Destructible asteroid fields
+
+Asteroids are no longer baked into the cached background: the starfield, grid and gravity well remain cached, while only moving/damaged rocks are redrawn each frame.
+
+| Asteroid stage | Integrity | Breakup |
+| --- | ---: | --- |
+| **Large** (radius at least 68) | 13 HP | Splits into **3 medium** drifting asteroids |
+| **Medium** | 7 HP | Splits into **4 small** drifting asteroids |
+| **Small** | 3 HP | Bursts into **7 fast, short-lived kinetic fragments** |
+| **Kinetic fragments** | Short lifetime | Cannot split again; physically hit ship hulls, **ignoring shields** |
+
+- **Cannon shells** remove HP gradually (normally 1.45 per hit); repeated hits produce chips before the rock finally breaks.
+- **Missile explosions** apply heavy rock damage (up to 11, with falloff), meaning weakened large rocks or intact medium/small rocks may break. Nearby rocks can be damaged by the same blast. Intercepted missiles still detonate, so point defence may inadvertently fracture nearby cover.
+- **Spinal beams** instantly destroy any pre-existing asteroid they physically cross and **continue straight through**, potentially breaking several before striking a ship. Fresh fragments created by this discharge are excluded from its remaining collision checks, preventing recursive breakup loops.
+- Drift, ejection impulses, modest gravity effects, moving fragment collisions with ships, rock-damage flashes and breakup debris make cover hazardous after destruction.
+- Active simulation is bounded to **110 rocks** and **144 kinetic fragments**; the latter have short lifetimes rather than full rock simulation.
+- **V** overlays asteroid health indicators for testing, alongside the existing firing arcs.
+
+A direct collision with a sufficiently fast asteroid, or impact from a final fragment, damages **hull only**. Shields do not intercept kinetic rock impact.
+
 ## Spinal beam — shield interception versus hull penetration
 
 - **Tap Y / Space** to arm a **5-second automatic countdown**. The ship progressively surrenders propulsion power during the charge. The beam fires itself when the countdown reaches zero: there is **no hold/release requirement**.
 - **Tap again before firing** to abort. Cancellation dumps the charge and imposes a short recovery cooldown.
-- The spinal beam is **straight and true**, with no waviness or wandering. At a world boundary, it can reflect into another straight segment. Rocks absorb it; shield surfaces stop it precisely at the interception point.
+- The spinal beam is **straight and true**, with no waviness or wandering. At a world boundary, it can reflect into another straight segment. Asteroids fracture instantly as the beam passes through; shield surfaces stop it precisely at the interception point.
 - If it meets an **active enemy shield**, the shield takes very heavy damage and **absorbs the entire discharge**. Even if this shot depletes the shield, it does not punch through in that same shot; the flare marks the shield's position.
 - If the target's **shield is already depleted**, the beam inflicts **massive hull damage**, visually cuts through the ship's silhouette with a bright entry-to-exit wound, and **continues beyond** to potentially damage another ship.
 - Penetrated vessels vent glowing debris and a small smoke/atmosphere trail from the breach. Damage to each hull is applied only once per discharge, never once per rendering frame.
@@ -58,13 +93,16 @@ Port and starboard guns auto-acquire enemies within their 120° firing arcs and 
 2. Tap **Y** once: observe the five-second countdown and propulsion loss, then automatic discharge. Start another charge and press **Y** again to verify cancellation and cooldown.
 3. Hit enemy shields with the beam: it should **terminate with a bright shield flare**, not pass through. When shields collapse, they should **stay OFFLINE** for the whole encounter even after waiting; the next beam should penetrate the exposed hull, leaving a glowing breach and debris.
 4. Tap **A**: watch the missiles drift for one second, then ignite and arc toward moving enemies. Near-misses should detonate with weaker splash damage.
-5. Strike an asteroid fast enough to damage the **hull**, while **shield HP remains unchanged**. Repeat with an enemy if practical.
-6. Wait for the hostile frigate to launch its **two-missile salvo**. Activate a broadside, orient the enemy missiles into its arc and watch the point-defence guns track and **explode** incoming missiles. Verify the splash can affect nearby targets, and that bullets don't destroy friendly missiles.
-7. Confirm any bullet, missile or beam strike that damages hull produces **visible flying fragments**. Shield-only hits should not shed hull plating.
-8. Confirm shield bar position above hull; test automatic broadside firing, enemy manoeuvres and FPS with the missile salvo active.
+5. Toggle **V** and wear down a large asteroid with cannon fire; it should show damage, fracture into **three medium** rocks, then smaller pieces when struck again. Verify final fragments can strike ships and bypass shields.
+6. Launch a missile into a rock cluster and watch the heavy blast damage multiple rocks. A weakened large rock should break; a small one should shatter.
+7. Fire the **straight spinal beam** through an asteroid: it should immediately fracture the rock, keep travelling, and potentially strike something behind it. The rock should never simply absorb the beam.
+8. Press **T** to compare scanner modes. Verify off-screen enemy arrows, then Tactical's grouped missile warnings and incoming cannon warnings. Nearby radar contacts should reflect scanner range.
+9. Wait for the hostile frigate to launch its **two-missile salvo**. Activate a broadside, orient the enemy missiles into its arc and watch the point-defence guns track and **explode** incoming missiles. Verify the splash can affect nearby targets, and that bullets don't destroy friendly missiles.
+10. Confirm any bullet, missile or beam strike that damages hull produces **visible flying fragments**. Shield-only hits should not shed hull plating.
+11. Confirm shield bar position above hull; test automatic broadside firing, enemy manoeuvres and FPS with the missile salvo active.
 
 ## Deferred
 
-Allied captains, personalities, voice acknowledgements, radial command menus, directional shield redistribution, mines/turrets, persistent upgrades, fires and module damage. This is still an isolated **single-flagship test**, not a fleet campaign.
+Allied captains, personalities, voice acknowledgements, radial command menus, directional shield redistribution, **jamming and nebula interference**, mines/turrets, persistent upgrades, fires and module damage. This is still an isolated **single-flagship test**, not a fleet campaign.
 
 **Validation:** Source changes are committed and cross-checked. The authoring environment does not have a Godot 4.5.2 executable, so engine parsing, gameplay feel and performance must be verified by running the project in Godot.
