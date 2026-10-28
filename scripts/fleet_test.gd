@@ -722,6 +722,7 @@ func _draw() -> void:
     # Only moving objects and UI are redrawn every frame. The background is
     # a show_behind_parent child with independently cached draw commands.
     draw_set_transform(camera_offset, 0.0, Vector2.ONE * view_zoom)
+    draw_weapon_arcs()
     draw_targets()
     draw_shots()
     draw_ship()
@@ -733,38 +734,89 @@ func _draw() -> void:
 func draw_targets() -> void:
     var font := ThemeDB.fallback_font
     for target in targets:
+        if bool(target["destroyed"]):
+            continue
         var centre: Vector2 = target["pos"]
+        # Skip distant enemies entirely when outside the camera.
+        if absf(centre.x - camera_pos.x) > 1500.0 or absf(centre.y - camera_pos.y) > 1100.0:
+            continue
         var angle: float = target["angle"]
-        var alive := float(target["hp"]) > 0.0
-        var hull_color := Color(0.44, 0.21, 0.24) if alive else Color(0.16, 0.19, 0.23)
-        var edge_color := Color(0.93, 0.54, 0.51) if alive else Color(0.32, 0.36, 0.40)
+        var frigate: bool = target["kind"] == "frigate"
+        var scale_factor := 0.64 if frigate else 1.0
+        var hull_color := Color(0.29, 0.21, 0.26) if frigate else Color(0.39, 0.23, 0.27)
+        var edge_color := Color(1.0, 0.67, 0.41) if frigate else Color(0.96, 0.44, 0.41)
         if float(target["flash"]) > 0.0:
-            edge_color = Color(1.0, 0.96, 0.76)
-        # Capital-ship silhouette at the same world scale as the flagship.
+            edge_color = Color(1.0, 0.97, 0.78)
+        # Silhouette size mirrors role: frigate < cruiser < player flagship.
         var points := PackedVector2Array()
         for local in [
             Vector2(0, -61), Vector2(23, -43), Vector2(30, -10),
             Vector2(39, 23), Vector2(23, 55), Vector2(-23, 55),
             Vector2(-39, 23), Vector2(-30, -10), Vector2(-23, -43)
         ]:
-            points.append(centre + local.rotated(angle))
+            points.append(centre + (local * scale_factor).rotated(angle))
         draw_colored_polygon(points, hull_color)
         var closed := points.duplicate()
         closed.append(points[0])
-        draw_polyline(closed, edge_color, 3.5, true)
-        draw_line(centre + Vector2(0, -46).rotated(angle),
-            centre + Vector2(0, 40).rotated(angle), edge_color.darkened(0.25), 4.0, true)
-        for side in [-1.0, 1.0]:
-            for y in [-22.0, 20.0]:
-                draw_line(centre + Vector2(side * 27, y).rotated(angle),
-                    centre + Vector2(side * 45, y).rotated(angle), edge_color, 4.0, true)
+        draw_polyline(closed, edge_color, 3.0, true)
+        draw_line(centre + (Vector2(0, -46) * scale_factor).rotated(angle),
+            centre + (Vector2(0, 40) * scale_factor).rotated(angle), edge_color.darkened(0.25), 3.5, true)
+        if frigate:
+            draw_line(centre + Vector2(-18, -12).rotated(angle),
+                centre + Vector2(18, -12).rotated(angle), edge_color, 4.0, true)
+        else:
+            for side in [-1.0, 1.0]:
+                for y in [-22.0, 20.0]:
+                    draw_line(centre + Vector2(side * 27, y).rotated(angle),
+                        centre + Vector2(side * 45, y).rotated(angle), edge_color, 4.0, true)
+        if float(target["shields"]) > 0.0:
+            draw_arc(centre, float(target["radius"]) + 11.0, 0.0, TAU, 36,
+                Color(0.28, 0.68, 1.0, 0.22 if float(target["flash"]) <= 0.0 else 0.76), 2.4, true)
         draw_string(font, centre + Vector2(-91, -91), String(target["name"]),
-            HORIZONTAL_ALIGNMENT_LEFT, -1, 20, MUTED)
-        var ratio := float(target["hp"]) / float(target["max_hp"])
-        draw_rect(Rect2(centre + Vector2(-60, 69), Vector2(120, 7)), Color(0.08, 0.13, 0.18), true)
-        draw_rect(Rect2(centre + Vector2(-60, 69), Vector2(120 * ratio, 7)), edge_color, true)
+            HORIZONTAL_ALIGNMENT_LEFT, -1, 19, MUTED)
+        var hp_ratio := float(target["hp"]) / float(target["max_hp"])
+        var shield_ratio := float(target["shields"]) / float(target["max_shields"])
+        draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112, 7)), Color(0.08, 0.13, 0.18), true)
+        draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112 * hp_ratio, 7)), edge_color, true)
+        draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112, 5)), Color(0.08, 0.13, 0.18), true)
+        draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112 * shield_ratio, 5)), STARBOARD_COLOR, true)
+
+func draw_weapon_arcs() -> void:
+    if not show_arcs:
+        return
+    for side in [-1.0, 1.0]:
+        var bearing := Vector2(side, 0.0).rotated(ship_angle).angle()
+        var color := PORT_COLOR if side < 0.0 else STARBOARD_COLOR
+        color.a = 0.50
+        draw_arc(ship_pos, BATTERY_RANGE, bearing - BATTERY_HALF_ARC,
+            bearing + BATTERY_HALF_ARC, 52, color, 3.5, true)
+        color.a = 0.20
+        draw_arc(ship_pos, BATTERY_RANGE * 1.08, bearing - TRACKING_HALF_ARC,
+            bearing + TRACKING_HALF_ARC, 52, color, 2.0, true)
+        var idx: int = port_target if side < 0.0 else starboard_target
+        if idx >= 0 and idx < targets.size() and not bool(targets[idx]["destroyed"]):
+            draw_line(ship_pos, targets[idx]["pos"], Color(color.r, color.g, color.b, 0.25), 1.5, true)
+    var beam_angle := Vector2.UP.rotated(ship_angle).angle()
+    draw_arc(ship_pos, 1150.0, beam_angle - BOW_HALF_ARC,
+        beam_angle + BOW_HALF_ARC, 44, Color(0.45, 0.87, 1.0, 0.28), 2.5, true)
+    for enemy in targets:
+        if bool(enemy["destroyed"]):
+            continue
+        var base: Vector2 = enemy["pos"]
+        var angle: float = enemy["angle"]
+        if enemy["kind"] == "cruiser":
+            for side in [-1.0, 1.0]:
+                var arc_angle := Vector2(side, 0.0).rotated(angle).angle()
+                draw_arc(base, float(enemy["range"]), arc_angle - BATTERY_HALF_ARC,
+                    arc_angle + BATTERY_HALF_ARC, 40, Color(0.99, 0.34, 0.30, 0.25), 2.5, true)
+        else:
+            var bow := Vector2.UP.rotated(angle).angle()
+            draw_arc(base, float(enemy["range"]), bow - deg_to_rad(30.0),
+                bow + deg_to_rad(30.0), 30, Color(1.0, 0.60, 0.24, 0.28), 2.5, true)
 
 func draw_ship() -> void:
+    if player_destroyed:
+        return
     draw_set_transform(camera_offset + ship_pos * view_zoom, ship_angle, Vector2.ONE * view_zoom)
     if thrusting and charge < CHARGE_SECONDS:
         var jet := 15.0 + 10.0 * (0.5 + 0.5 * sin(time_passed * 38.0))
@@ -806,8 +858,9 @@ func draw_shots() -> void:
     for bullet in shots:
         var position: Vector2 = bullet["pos"]
         var direction: Vector2 = Vector2(bullet["vel"]).normalized()
-        var tint := PORT_COLOR if float(bullet["side"]) < 0.0 else STARBOARD_COLOR
-        draw_line(position - direction * 8.0, position + direction * 3.0, tint, 3.0, true)
+        var tint := Color(1.0, 0.28, 0.23) if bool(bullet["hostile"]) else (
+            PORT_COLOR if float(bullet["side"]) < 0.0 else STARBOARD_COLOR)
+        draw_line(position - direction * 10.0, position + direction * 3.0, tint, 3.0, true)
 
 func draw_beam() -> void:
     if beam_path.size() < 2:
@@ -840,23 +893,52 @@ func draw_impacts() -> void:
 
 func draw_hud() -> void:
     var font := ThemeDB.fallback_font
-    draw_string(font, Vector2(32, 36), "FLEET COMMAND  /  OPEN-THEATRE SCALE TEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, WHITE)
-    draw_string(font, Vector2(32, 62), "6,000 x 4,200 THEATRE   •   3 INERT CAPITAL TARGETS   •   ASTEROIDS + GRAVITY   •   NO AFT GUNS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+    draw_rect(Rect2(0, 0, 1200, 103), Color(0.012, 0.022, 0.043, 0.91), true)
+    draw_rect(Rect2(0, 690, 1200, 110), Color(0.012, 0.022, 0.043, 0.91), true)
+    draw_string(font, Vector2(25, 30), "FLEET COMMAND / FIRST CONTACT", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, WHITE)
+    draw_string(font, Vector2(25, 57), "AUTO-TRACKING BROADSIDES  •  TWO HOSTILE VESSELS  •  ONE HEAVY FLAGSHIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+    var port_status := "ON" if port_order else "OFF"
+    var star_status := "ON" if starboard_order else "OFF"
+    var port_lock := targets[port_target]["name"] if port_target >= 0 else "STRAIGHT FIRE"
+    var star_lock := targets[starboard_target]["name"] if starboard_target >= 0 else "STRAIGHT FIRE"
+    draw_string(font, Vector2(25, 87), "PORT  %s  [%02d]  %s" % [port_status, int(port_ammo), port_lock],
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 14, PORT_COLOR if port_order else MUTED)
+    draw_string(font, Vector2(378, 87), "STBD  %s  [%02d]  %s" % [star_status, int(starboard_ammo), star_lock],
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 14, STARBOARD_COLOR if starboard_order else MUTED)
+
     var charge_ratio := charge / CHARGE_SECONDS
-    var bar_pos := Vector2(815, 31)
-    draw_string(font, bar_pos + Vector2(0, -1), "BOW BEAM CHARGE", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, BEAM_COLOR)
-    draw_rect(Rect2(bar_pos + Vector2(0, 12), Vector2(245, 15)), Color(0.10, 0.19, 0.27), true)
-    draw_rect(Rect2(bar_pos + Vector2(0, 12), Vector2(245 * charge_ratio, 15)), BEAM_COLOR, true)
-    var beam_status := "RELEASE TO FIRE" if charge > 0.0 else ("RECHARGING" if beam_recovery > 0.0 else "HOLD SPACE")
+    var bar_pos := Vector2(880, 27)
+    draw_string(font, bar_pos + Vector2(0, -1), "BOW BEAM", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, BEAM_COLOR)
+    draw_rect(Rect2(bar_pos + Vector2(0, 10), Vector2(180, 11)), Color(0.10, 0.19, 0.27), true)
+    draw_rect(Rect2(bar_pos + Vector2(0, 10), Vector2(180 * charge_ratio, 11)), BEAM_COLOR, true)
+    var beam_status := "RELEASE" if charge > 0.0 else ("RECHARGING" if beam_recovery > 0.0 else "HOLD Y / SPACE")
     if charge_ratio >= 0.999:
-        beam_status = "FULL - SHIP STOPPED"
-    draw_string(font, Vector2(815, 83), beam_status, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, WHITE)
-    var velocity_text := "SPEED  %03d / %03d   TURN  %02d deg/s" % [roundi(velocity.length()), roundi(MAX_SPEED), roundi(absf(rad_to_deg(angular_velocity)))]
-    draw_string(font, Vector2(32, 713), "CAMERA %.2fx   •   THEATRE 6000 x 4200   •   POSITION %d / %d" % [view_zoom, roundi(ship_pos.x), roundi(ship_pos.y)], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
-    draw_string(font, Vector2(32, 738), velocity_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
-    draw_string(font, Vector2(32, 768), "W/S thrust/brake  •  A/D turn  •  Q/E broadsides  •  HOLD/RELEASE SPACE beam  •  - / = zoom  •  R reset", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, MUTED)
-    draw_string(font, Vector2(32, 790), "Gamepad: left stick steer / thrust, A thrust, B brake, X/Y broadsides, RT beam. Cruiser targets respawn.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
-    draw_string(font, Vector2(1095, 36), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
+        beam_status = "READY - STOPPED"
+    draw_string(font, Vector2(880, 79), beam_status, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, WHITE)
+    draw_string(font, Vector2(1093, 29), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
+    if sound_message_timer > 0.0:
+        draw_string(font, Vector2(355, 130), sound_message, HORIZONTAL_ALIGNMENT_CENTER, 520, 19, WHITE)
+
+    draw_string(font, Vector2(25, 720), "HULL %02d/%02d" % [int(player_hull), int(PLAYER_MAX_HULL)],
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 15, PORT_COLOR)
+    draw_rect(Rect2(168, 705, 140, 10), Color(0.07, 0.11, 0.17), true)
+    draw_rect(Rect2(168, 705, 140 * player_hull / PLAYER_MAX_HULL, 10), PORT_COLOR, true)
+    draw_string(font, Vector2(331, 720), "SHIELDS %02d/%02d" % [int(player_shields), int(PLAYER_MAX_SHIELDS)],
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 15, STARBOARD_COLOR)
+    draw_rect(Rect2(498, 705, 140, 10), Color(0.07, 0.11, 0.17), true)
+    draw_rect(Rect2(498, 705, 140 * player_shields / PLAYER_MAX_SHIELDS, 10), STARBOARD_COLOR, true)
+    draw_string(font, Vector2(667, 720), "SPEED %03d  |  ZOOM %.2f" % [roundi(velocity.length()), view_zoom],
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
+    draw_string(font, Vector2(25, 754), "LEFT STICK: STEER / THRUST / BRAKE     X: PORT     B: STARBOARD     Y: CHARGE BEAM     A: CEASE FIRE",
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
+    draw_string(font, Vector2(25, 782), "Keyboard: WASD move   Q/E toggle batteries   Space beam   C cease   V show arcs   -/= zoom   R restart",
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
+    if encounter_finished:
+        draw_rect(Rect2(280, 303, 640, 126), Color(0.012, 0.026, 0.042, 0.90), true)
+        draw_rect(Rect2(280, 303, 640, 126), Color(0.39, 0.72, 0.87), false, 2.0)
+        draw_string(font, Vector2(310, 359), "FLAGSHIP DESTROYED" if player_destroyed else "VICTORY - ENEMY FLEET DEFEATED",
+            HORIZONTAL_ALIGNMENT_CENTER, 580, 25, WHITE)
+        draw_string(font, Vector2(310, 399), "PRESS R TO RESTART", HORIZONTAL_ALIGNMENT_CENTER, 580, 18, MUTED)
     draw_radar()
 
 func draw_radar() -> void:
@@ -868,7 +950,7 @@ func draw_radar() -> void:
         draw_circle(chart.position + normalized * chart.size, 1.1, Color(0.33, 0.41, 0.46))
     draw_circle(chart.position + GRAVITY_CENTER / FIELD.size * chart.size, 2.0, Color(0.55, 0.42, 0.85))
     for target in targets:
-        if float(target["hp"]) > 0.0:
+        if not bool(target["destroyed"]):
             draw_circle(chart.position + Vector2(target["pos"]) / FIELD.size * chart.size, 2.4, Color(0.98, 0.51, 0.43))
     draw_circle(chart.position + ship_pos / FIELD.size * chart.size, 3.1, Color(0.52, 0.96, 1.0))
     var font := ThemeDB.fallback_font
