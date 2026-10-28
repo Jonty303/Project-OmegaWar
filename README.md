@@ -44,17 +44,17 @@ Port and starboard guns auto-acquire enemies within their 120° firing arcs and 
 
 ## Movement, collisions, visual health
 
-- **Reverse thrust** is directional propulsion rather than a brake. Reverse acceleration and maximum reverse velocity are lower than forward values.
-- Player and enemy ships leave restrained **ion trails** aligned with *actual velocity*, not nose direction; faster motion leaves a stronger/longer trail.
+- **Reverse thrust** is directional propulsion rather than a brake. Reverse acceleration is now **40 units/s²** (forward: 54), with maximum reverse speed **78 units/s** (forward: 112). Two conspicuous, pulsing **blue bow jets** show reverse thrust, plus a HUD reverse-thrust indicator.
+- Player and enemy ships leave **longer, thicker, brighter blue-white ion trails** aligned with *actual velocity*, not nose direction; faster motion leaves a more pronounced wake. Trail particles persist for about **0.46–1.24 seconds** depending on speed.
 - Both friendly and hostile ships suffer **kinetic asteroid impact damage directly to hull** at sufficient approach speeds. Shields do not protect against asteroid collisions; low-speed grazing causes little or no harm.
 - The bars above enemy ships are ordered **shields on top, hull underneath**. The main HUD still displays **hull on the far left, followed by shields**.
-- Both hostiles retain hull HP and rechargeable shields. Impacts, shield flashes, debris, and victory/defeat states remain.
+- Both hostiles retain hull HP and shields. **A shield reduced to zero goes permanently offline for the remainder of the battle**, for both enemies and player. Partial shields only regenerate very slowly (**0.35 shield HP/second**, after **6 seconds** without further damage). The HUD labels depleted shields **OFFLINE**; there is no shield-restart ability in this pass. Future skills, properties or upgrades may provide an explicit restart/recharge mechanism. Impacts, shield flashes, debris, and victory/defeat states remain.
 
 ## Playtest checklist
 
-1. With the ship stationary, pull the left stick down: the vessel should accelerate **stern first**, leaving a trail in the correct direction.
+1. With the ship stationary, pull the left stick down: the vessel should accelerate **stern first**, show **bright blue bow thrusters**, and leave a longer trail in the correct direction. Compare reverse with stronger forward propulsion.
 2. Tap **Y** once: observe the five-second countdown and propulsion loss, then automatic discharge. Start another charge and press **Y** again to verify cancellation and cooldown.
-3. Hit enemy shields with the beam: it should **terminate with a bright shield flare**, not pass through. After shield collapse, charge again to see hull damage, penetration, glowing breach and debris.
+3. Hit enemy shields with the beam: it should **terminate with a bright shield flare**, not pass through. When shields collapse, they should **stay OFFLINE** for the whole encounter even after waiting; the next beam should penetrate the exposed hull, leaving a glowing breach and debris.
 4. Tap **A**: watch the missiles drift for one second, then ignite and arc toward moving enemies. Near-misses should detonate with weaker splash damage.
 5. Strike an asteroid fast enough to damage the **hull**, while **shield HP remains unchanged**. Repeat with an enemy if practical.
 6. Confirm shield bar position above hull; test automatic broadside firing, enemy manoeuvres and FPS with the missile salvo active.
