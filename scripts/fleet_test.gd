@@ -132,8 +132,8 @@ func setup_targets() -> void:
     # until real fleet AI is introduced. Full HP/respawn gunnery targets.
     targets = [
         {"pos": Vector2(3350, 2100), "angle": -0.9, "hp": 42.0, "max_hp": 42.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER ALPHA"},
-        {"pos": Vector2(2450, 1440), "angle": 0.27, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER BETA"},
-        {"pos": Vector2(2490, 2760), "angle": -0.32, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER GAMMA"}
+        {"pos": Vector2(2450, 1650), "angle": 0.27, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER BETA"},
+        {"pos": Vector2(2490, 2550), "angle": -0.32, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER GAMMA"}
     ]
 
 func reset_test() -> void:
