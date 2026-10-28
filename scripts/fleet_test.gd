@@ -274,7 +274,7 @@ func damage_asteroid(index: int, amount: float, hit: Vector2, force: Vector2, so
             var child_pos := centre + outward * (float(rock["radius"]) * 0.74)
             add_asteroid(child_pos, new_radius, tier - 1, child_vel, time_passed)
     else:
-        spawn_final_fragments(centre, parent_velocity, force)
+        spawn_final_fragments(centre, parent_velocity, force, source)
 
 func spawn_rock_chips(at: Vector2, count: int) -> void:
     for n in range(count):
@@ -285,7 +285,7 @@ func spawn_rock_chips(at: Vector2, count: int) -> void:
             "life": duration, "max_life": duration, "color": MUTED
         })
 
-func spawn_final_fragments(centre: Vector2, inherited: Vector2, force: Vector2) -> void:
+func spawn_final_fragments(centre: Vector2, inherited: Vector2, force: Vector2, source: String) -> void:
     # Terminal breakup uses short-lived kinetic projectiles, not further
     # asteroid nodes. Total count is capped to protect swarm performance.
     for n in range(7):
@@ -296,7 +296,7 @@ func spawn_final_fragments(centre: Vector2, inherited: Vector2, force: Vector2) 
         kinetic_fragments.append({
             "pos": centre, "vel": inherited * 0.7 + outward * spd + force.limit_length(120.0) * 0.35,
             "life": randf_range(1.3, 2.6), "radius": randf_range(3.5, 7.0),
-            "damage": randf_range(0.7, 1.7)
+            "damage": randf_range(0.7, 1.7), "source": source
         })
 
 func advance_asteroids(delta: float) -> void:
@@ -349,7 +349,8 @@ func advance_fragments(delta: float) -> void:
         if not removed and not player_destroyed:
             var closest := Geometry2D.get_closest_point_to_segment(ship_pos, previous, next)
             if closest.distance_squared_to(ship_pos) <= pow(SHIP_RADIUS + float(piece["radius"]), 2.0):
-                damage_player_hull_direct(float(piece["damage"]), closest, "ASTEROID FRAGMENT")
+                var source: String = "BEAM-SHATTERED ROCK" if piece["source"] == "beam" else "ASTEROID FRAGMENT"
+                damage_player_hull_direct(float(piece["damage"]), closest, source)
                 removed = true
         if not removed:
             for j in range(targets.size()):
@@ -1234,7 +1235,7 @@ func damage_player(amount: float, at: Vector2, cause: String = "HOSTILE FIRE") -
     if absorbed > 0.0:
         player_shield_flash = 0.22
     var hull_damage := maxf(0.0, amount - absorbed)
-    record_player_hit(cause, amount, hull_damage <= 0.0)
+    record_player_hit(cause, hull_damage if hull_damage > 0.0 else absorbed, hull_damage <= 0.0)
     player_hull = maxf(0.0, player_hull - hull_damage)
     if hull_damage > 0.0:
         spawn_hull_debris(at, ship_pos, velocity, hull_damage)
