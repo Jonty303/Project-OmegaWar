@@ -19,6 +19,17 @@ const CHARGE_SECONDS := 2.4
 const BROADSIDE_INTERVAL := 0.56
 const SHELL_SPEED := 390.0
 const BEAM_EXPAND_SPEED := 1450.0
+const BATTERY_RANGE := 800.0
+const BATTERY_HALF_ARC := deg_to_rad(60.0)
+const TRACKING_HALF_ARC := deg_to_rad(75.0)
+const BOW_HALF_ARC := deg_to_rad(10.0)
+const SHIP_RADIUS := 45.0
+const PLAYER_MAX_HULL := 30.0
+const PLAYER_MAX_SHIELDS := 18.0
+const AMMO_CAPACITY := 18.0
+const AMMO_RECHARGE := 1.7
+const CRUISER_WEAPON_RANGE := 760.0
+const FRIGATE_WEAPON_RANGE := 610.0
 
 const WHITE := Color(0.80, 0.91, 0.97)
 const MUTED := Color(0.43, 0.57, 0.70)
@@ -49,6 +60,20 @@ var starboard_cooldown := 0.0
 var port_flash := 0.0
 var starboard_flash := 0.0
 var time_passed := 0.0
+var port_order := false
+var starboard_order := false
+var port_target := -1
+var starboard_target := -1
+var port_ammo := AMMO_CAPACITY
+var starboard_ammo := AMMO_CAPACITY
+var player_hull := PLAYER_MAX_HULL
+var player_shields := PLAYER_MAX_SHIELDS
+var player_shield_delay := 0.0
+var encounter_finished := false
+var player_destroyed := false
+var show_arcs := false
+var sound_message := ""
+var sound_message_timer := 0.0
 var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
 var targets: Array[Dictionary] = []
@@ -82,19 +107,22 @@ func make_inputs() -> void:
     key_action("fc_starboard", KEY_E)
     key_action("fc_beam", KEY_SPACE)
     key_action("fc_reset", KEY_R)
+    key_action("fc_cease", KEY_C)
+    key_action("fc_arcs", KEY_V)
     key_action("fc_zoom_out", KEY_MINUS)
     key_action("fc_zoom_in", KEY_EQUAL)
-    pad_button("fc_thrust", JOY_BUTTON_A)
-    pad_button("fc_brake", JOY_BUTTON_B)
+    # Left-stick axes handle all piloting. Face buttons exclusively issue
+    # weapon orders: X port, B starboard, Y charge beam, A cease fire.
     pad_button("fc_port", JOY_BUTTON_X)
-    pad_button("fc_starboard", JOY_BUTTON_Y)
-    pad_button("fc_turn_left", JOY_BUTTON_DPAD_LEFT)
-    pad_button("fc_turn_right", JOY_BUTTON_DPAD_RIGHT)
+    pad_button("fc_starboard", JOY_BUTTON_B)
+    pad_button("fc_beam", JOY_BUTTON_Y)
+    pad_button("fc_cease", JOY_BUTTON_A)
+    # D-pad remains free for later shield/command radial menu.
     pad_axis("fc_turn_left", JOY_AXIS_LEFT_X, -1.0)
     pad_axis("fc_turn_right", JOY_AXIS_LEFT_X, 1.0)
     pad_axis("fc_thrust", JOY_AXIS_LEFT_Y, -1.0)
     pad_axis("fc_brake", JOY_AXIS_LEFT_Y, 1.0)
-    pad_axis("fc_beam", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+    # No trigger binding: beam is on the upper face button.
 
 func key_action(action: String, code: int) -> void:
     if not InputMap.has_action(action):
@@ -131,12 +159,23 @@ func setup_asteroids() -> void:
         asteroids.append({"pos": Vector2(location.x, location.y), "radius": location.z})
 
 func setup_targets() -> void:
-    # Other capital-sized hulls in the starting view, deliberately inert
-    # until real fleet AI is introduced. Full HP/respawn gunnery targets.
+    # Two mobile enemies: an arc-aware broadside cruiser and a nimble
+    # forward-firing frigate. Both obey inertia and their own turn limits.
     targets = [
-        {"pos": Vector2(3350, 2100), "angle": -0.9, "hp": 42.0, "max_hp": 42.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER ALPHA"},
-        {"pos": Vector2(2450, 1650), "angle": 0.27, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER BETA"},
-        {"pos": Vector2(2490, 2550), "angle": -0.32, "hp": 36.0, "max_hp": 36.0, "respawn": 0.0, "flash": 0.0, "name": "TARGET CRUISER GAMMA"}
+        {"pos": Vector2(3300, 1970), "angle": -1.4, "velocity": Vector2.ZERO,
+            "turn_velocity": 0.0, "hp": 34.0, "max_hp": 34.0,
+            "shields": 15.0, "max_shields": 15.0, "shield_delay": 0.0,
+            "flash": 0.0, "reload": 1.8, "name": "HOSTILE CRUISER", "kind": "cruiser",
+            "speed": 83.0, "turn_rate": 0.50, "accel": 37.0, "reload_time": 1.65,
+            "range": CRUISER_WEAPON_RANGE, "damage": 2.1, "radius": 49.0,
+            "destroyed": false},
+        {"pos": Vector2(2060, 2640), "angle": -0.6, "velocity": Vector2.ZERO,
+            "turn_velocity": 0.0, "hp": 18.0, "max_hp": 18.0,
+            "shields": 7.0, "max_shields": 7.0, "shield_delay": 0.0,
+            "flash": 0.0, "reload": 2.1, "name": "HOSTILE FRIGATE", "kind": "frigate",
+            "speed": 142.0, "turn_rate": 1.15, "accel": 66.0, "reload_time": 0.85,
+            "range": FRIGATE_WEAPON_RANGE, "damage": 1.0, "radius": 29.0,
+            "destroyed": false}
     ]
 
 func reset_test() -> void:
@@ -155,12 +194,27 @@ func reset_test() -> void:
     shots.clear()
     impacts.clear()
     setup_targets()
+    player_hull = PLAYER_MAX_HULL
+    player_shields = PLAYER_MAX_SHIELDS
+    player_shield_delay = 0.0
+    port_order = false
+    starboard_order = false
+    port_target = -1
+    starboard_target = -1
+    port_ammo = AMMO_CAPACITY
+    starboard_ammo = AMMO_CAPACITY
+    encounter_finished = false
+    player_destroyed = false
+    sound_message = ""
+    sound_message_timer = 0.0
 
 func _physics_process(delta: float) -> void:
     time_passed += delta
     sound_bus.advance(delta)
     if Input.is_action_just_pressed("fc_reset"):
         reset_test()
+    if Input.is_action_just_pressed("fc_arcs"):
+        show_arcs = not show_arcs
     if Input.is_action_just_pressed("fc_zoom_out"):
         view_zoom = maxf(0.38, view_zoom - 0.07)
     if Input.is_action_just_pressed("fc_zoom_in"):
@@ -172,34 +226,51 @@ func _physics_process(delta: float) -> void:
     port_flash = maxf(0.0, port_flash - delta)
     starboard_flash = maxf(0.0, starboard_flash - delta)
 
+    sound_message_timer = maxf(0.0, sound_message_timer - delta)
+    port_ammo = minf(AMMO_CAPACITY, port_ammo + AMMO_RECHARGE * delta)
+    starboard_ammo = minf(AMMO_CAPACITY, starboard_ammo + AMMO_RECHARGE * delta)
+    if Input.is_action_just_pressed("fc_cease"):
+        port_order = false
+        starboard_order = false
+        port_target = -1
+        starboard_target = -1
+        announce("ALL BATTERIES - CEASE FIRE")
+    if Input.is_action_just_pressed("fc_port"):
+        port_order = not port_order
+        port_target = -1
+        announce("PORT BATTERIES - " + ("OPEN FIRE" if port_order else "CEASE FIRE"))
+    if Input.is_action_just_pressed("fc_starboard"):
+        starboard_order = not starboard_order
+        starboard_target = -1
+        announce("STARBOARD BATTERIES - " + ("OPEN FIRE" if starboard_order else "CEASE FIRE"))
+
     var holding_beam := Input.is_action_pressed("fc_beam")
-    if holding_beam and beam_recovery <= 0.0 and beam_path.is_empty():
+    if not encounter_finished and holding_beam and beam_recovery <= 0.0 and beam_path.is_empty():
         charge = minf(CHARGE_SECONDS, charge + delta)
         beam_held = true
     elif not holding_beam and beam_held:
-        if charge >= 0.28:
+        if charge >= 0.28 and not encounter_finished:
             fire_beam(charge / CHARGE_SECONDS)
         charge = 0.0
         beam_held = false
 
-    update_ship(delta)
+    if not player_destroyed:
+        update_ship(delta)
     camera_pos = camera_pos.lerp(ship_pos, 1.0 - exp(-2.5 * delta))
     var half_view := VIEW_SIZE * (0.5 / view_zoom)
     camera_pos.x = clampf(camera_pos.x, FIELD.position.x + half_view.x, FIELD.end.x - half_view.x)
     camera_pos.y = clampf(camera_pos.y, FIELD.position.y + half_view.y, FIELD.end.y - half_view.y)
     update_environment_transform()
-    if Input.is_action_pressed("fc_port") and port_cooldown <= 0.0:
-        fire_broadside(-1.0)
-        port_cooldown = BROADSIDE_INTERVAL
-        port_flash = 0.12
-    if Input.is_action_pressed("fc_starboard") and starboard_cooldown <= 0.0:
-        fire_broadside(1.0)
-        starboard_cooldown = BROADSIDE_INTERVAL
-        starboard_flash = 0.12
+
+    if not encounter_finished:
+        advance_enemies(delta)
+        process_battery_order(-1.0)
+        process_battery_order(1.0)
 
     advance_shots(delta)
     advance_beam(delta)
-    advance_targets(delta)
+    recharge_shields(delta)
+    check_encounter_result()
     for i in range(impacts.size() - 1, -1, -1):
         impacts[i]["life"] = float(impacts[i]["life"]) - delta
         if float(impacts[i]["life"]) <= 0.0:
@@ -259,14 +330,86 @@ func confine_ship() -> void:
             ship_pos = centre + outward * minimum
             velocity = velocity.slide(outward) * 0.75
 
-func fire_broadside(side: float) -> void:
+func announce(message: String) -> void:
+    sound_message = message
+    sound_message_timer = 2.0
+
+func arc_valid(source: Vector2, direction: Vector2, focus: Vector2, max_angle: float, max_range: float) -> bool:
+    var displacement: Vector2 = focus - source
+    if displacement.length_squared() > max_range * max_range:
+        return false
+    if displacement.length_squared() < 0.1:
+        return true
+    return absf(wrapf(displacement.angle() - direction.angle(), -PI, PI)) <= max_angle
+
+func line_clear(source: Vector2, destination: Vector2) -> bool:
+    for rock in asteroids:
+        var centre: Vector2 = rock["pos"]
+        var near := Geometry2D.get_closest_point_to_segment(centre, source, destination)
+        if near.distance_squared_to(centre) <= pow(float(rock["radius"]) + 5.0, 2.0):
+            return false
+    return true
+
+func choose_target(side: float, previous: int) -> int:
+    var direction := Vector2(side, 0.0).rotated(ship_angle)
+    # Retain a current lock through a slightly wider tracking cone.
+    if previous >= 0 and previous < targets.size():
+        var existing: Dictionary = targets[previous]
+        if not bool(existing["destroyed"]) and arc_valid(ship_pos, direction, existing["pos"], TRACKING_HALF_ARC, BATTERY_RANGE * 1.08) and line_clear(ship_pos, existing["pos"]):
+            return previous
+    var best := -1
+    var best_distance := INF
+    for j in range(targets.size()):
+        if bool(targets[j]["destroyed"]):
+            continue
+        var spot: Vector2 = targets[j]["pos"]
+        var distance := ship_pos.distance_squared_to(spot)
+        if distance < best_distance and arc_valid(ship_pos, direction, spot, BATTERY_HALF_ARC, BATTERY_RANGE) and line_clear(ship_pos, spot):
+            best_distance = distance
+            best = j
+    return best
+
+func process_battery_order(side: float) -> void:
+    var ordered: bool = port_order if side < 0.0 else starboard_order
+    if not ordered:
+        return
+    var previous: int = port_target if side < 0.0 else starboard_target
+    var next_target := choose_target(side, previous)
+    if side < 0.0:
+        port_target = next_target
+    else:
+        starboard_target = next_target
+    var cooldown: float = port_cooldown if side < 0.0 else starboard_cooldown
+    var ammo: float = port_ammo if side < 0.0 else starboard_ammo
+    if cooldown > 0.0 or ammo < 2.0:
+        return
+    fire_broadside(side, next_target)
+    if side < 0.0:
+        port_cooldown = BROADSIDE_INTERVAL
+        port_ammo -= 2.0
+        port_flash = 0.12
+    else:
+        starboard_cooldown = BROADSIDE_INTERVAL
+        starboard_ammo -= 2.0
+        starboard_flash = 0.12
+
+func fire_broadside(side: float, selected: int = -1) -> void:
     var outward := Vector2(side, 0.0).rotated(ship_angle)
+    var aim := outward
+    if selected >= 0 and selected < targets.size():
+        var requested: Vector2 = Vector2(targets[selected]["pos"]) - ship_pos
+        if requested.length_squared() > 0.1 and arc_valid(ship_pos, outward, targets[selected]["pos"], BATTERY_HALF_ARC, BATTERY_RANGE) and line_clear(ship_pos, targets[selected]["pos"]):
+            # Simple predictive lead on moving ships.
+            var prediction := requested.length() / SHELL_SPEED
+            aim = (requested + Vector2(targets[selected]["velocity"]) * prediction).normalized()
+            var offset := wrapf(aim.angle() - outward.angle(), -PI, PI)
+            aim = outward.rotated(clampf(offset, -BATTERY_HALF_ARC, BATTERY_HALF_ARC))
     for station in [-21.0, 21.0]:
-        var muzzle := ship_pos + Vector2(side * 48.0, station).rotated(ship_angle)
-        var direction := outward.rotated((station / 21.0) * 0.025 * side)
+        var muzzle := ship_pos + Vector2(side * 45.0, station).rotated(ship_angle)
+        var direction := aim.rotated((station / 21.0) * 0.014)
         shots.append({
             "pos": muzzle, "previous": muzzle, "vel": direction * SHELL_SPEED,
-            "life": 2.0, "side": side
+            "life": 2.7, "side": side, "hostile": false, "damage": 1.45
         })
     sound_bus.play("pulse")
 
