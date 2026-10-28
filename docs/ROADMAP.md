@@ -4,9 +4,13 @@
 
 This **classic-baseline** branch is focused on game feel:
 - one arena and central obstruction, plus two heavy movable asteroids as cover;
-- one non-solid localized gravity well with capped 118-unit/s² pull, which
-  affects ship/drone movement, laser shots, rockets, homing missiles and
-  (more weakly) heavy asteroids;
+- one non-solid localized gravity well with capped 118-unit/s² **ship**
+  pull, scaled 8× for laser bullets, 9× for unguided rockets and 14× for
+  homing missiles; heavy asteroids feel reduced pull. Homing guidance
+  retains gravitational momentum instead of cancelling it every frame;
+- Local Drones and missile variants actively avoid the well within
+  190 units, temporarily using 195-unit/s² escape acceleration and a
+  95-unit/s escape target speed to overcome attraction;
 - 145-unit/s² acceleration, 320-unit/s maximum ship speed and momentum
   without passive decay; 98.5% wall/core bounce restitution (but independent
   asteroid/ship impact physics);
@@ -88,7 +92,8 @@ obstacles.
    Drones avoid each other and never occupy the same footprint;
    Asteroid impacts never damage ships and persistent thrust slowly moves them.
 5. Controller A selects focused menu options, menu-only restart, pause
-   and wave timing are reliable; field gravity remains escapable and bends
-   shots and guided missiles without overriding launch inertia rules;
+   and wave timing are reliable; field gravity remains escapable and
+   visibly deflects shots and guided missiles, while Local Drones attempt
+   to leave its inner region without overriding launch inertia rules;
    missile contact with walls, core, asteroids and all ships detonates
    instead of bouncing.

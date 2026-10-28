@@ -156,12 +156,24 @@ Holding thrust outward therefore still allows escape. The pull falls to
 zero outside the field and is softened at the centre, avoiding unstable
 high-speed slingshots through an infinite-force singularity.
 
-Gravity accelerates **the player, all drone variants, Pulse Laser shots,
-unguided rockets and homing missiles**, so even an unguided shot can curve
-after launch. It also applies a reduced pull to very heavy asteroids.
-Projectile launch direction and speed still ignore the firing craft's
-velocity; the gravity effect is applied **after launch** during flight.
-The field itself does not inflict contact damage.
+Gravity pulls on **the player and all drone variants**, and applies a
+reduced pull to heavy asteroids. **Projectiles are affected far more
+strongly than craft**: Pulse Laser bullets experience **8× the normal pull**,
+unguided rockets **9×**, and guided missiles **14×**. This produces
+noticeably bent bullet paths and can overpower a homing missile's
+steering near the centre. Guidance preserves gravity-induced speed and
+heading changes instead of resetting them every frame.
+
+**Local Drones actively avoid the well.** Both standard sentries and
+long-range variants interrupt normal patrol, pursuit or idle behaviour
+inside a **190-unit avoidance radius**. They seek a reachable route
+away from the well, using up to **95 units/s of escape movement and
+195 units/s² of temporary acceleration**. This makes escape possible
+despite gravitational pull and preserves obstacle and ally separation.
+
+Projectile launch direction and initial speed still ignore firing craft
+velocity. Gravity bends trajectories **after launch**. The well itself
+is not solid and inflicts no contact damage.
 
 ## Test-only wave difficulty escalation
 
@@ -441,9 +453,14 @@ Manual playtest:
 - Check the bottom HUD updates with speed, thrust percentage, health,
   shields and heat, plus live rocket ammunition and cooldown.
 - Destroy a drone and verify its debris burst.
-- Fly near the lower-right gravity well and test coasting, curved Pulse
-  shots, unguided rockets and homing missiles; hold thrust outward to
-  confirm you can escape, even close to its centre.
+- Fly near the lower-right gravity well and test coasting; hold thrust
+  outward to confirm you can escape, even close to its centre. Shoot
+  horizontally near it and watch visible curvature in Pulse Laser bullets,
+  unguided rockets and enemy homing missiles. Their paths should bend much
+  more dramatically than the player's craft.
+- Observe idle and long-range Local Drones close to the well: they should
+  actively move outward and escape without phasing through the core,
+  asteroids or other drones.
 - Clear a wave: confirm the three-card bonus screen displays one random
   enemy escalation for the next wave, freezes play, supports controller A
   selection and retains your chosen upgrade. Hull should regain 25% of
