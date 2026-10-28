@@ -26,13 +26,16 @@ func _init() -> void:
 	lifetime = FLIGHT_LIFETIME
 	bounces_left = 0
 
-func steer(delta: float, target_position: Vector2) -> void:
+func steer(delta: float, target_position: Vector2, gravity_interference: float = 0.0) -> void:
 	var desired: Vector2 = (target_position - position).normalized()
 	var current: Vector2 = velocity.normalized()
 	if current.is_zero_approx():
 		current = desired
 	if not desired.is_zero_approx():
-		var angle: float = rotate_toward(current.angle(), desired.angle(), TURN_RATE * delta)
+		# Strong gravity also disrupts course corrections: a missile cannot
+		# perfectly cancel the anomaly's pull by re-aiming each frame.
+		var effective_turn_rate: float = TURN_RATE * (1.0 - 0.55 * clampf(gravity_interference, 0.0, 1.0))
+		var angle: float = rotate_toward(current.angle(), desired.angle(), effective_turn_rate * delta)
 		# Retain speed changes accumulated from gravity between guidance
 		# steps; otherwise steering would erase the pull every frame.
 		var retained_speed: float = clampf(velocity.length(), cruise_speed * 0.70, cruise_speed * 1.50)

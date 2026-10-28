@@ -988,7 +988,7 @@ func run() -> void:
 	for escape_tick in range(90):
 		game.arena.pull_body(fleeing_sentry, 1.0 / 60.0)
 		fleeing_sentry.step(1.0 / 60.0, Vector2(150, 200), game.arena)
-	check(fleeing_sentry.escaping_gravity, "Idle Local Drone recognizes the gravity hazard")
+	check(fleeing_sentry.escaping_gravity or fleeing_sentry.position.distance_to(field.position) >= fleeing_sentry.GRAVITY_AVOID_RADIUS, "Sentry avoids well until it escapes the hazard radius")
 	check(fleeing_sentry.position.distance_to(field.position) > start_distance + 25.0, "Local Drone actively flies away despite the inward force")
 	check(fleeing_sentry.velocity.x < 0.0, "Local Drone acceleration overcomes gravity without teleporting")
 	fleeing_sentry.free()

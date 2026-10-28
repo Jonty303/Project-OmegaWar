@@ -665,7 +665,7 @@ func step_homing_missiles(delta: float) -> void:
 		var detonate: bool = missile.lifetime <= 0.0 or missile.distance_travelled >= missile.max_range
 		if not detonate:
 			if ship.visible:
-				missile.steer(delta, ship.position)
+				missile.steer(delta, ship.position, arena.gravity_at(missile.position).length() / arena.gravity_well.MAX_PULL)
 			var substeps: int = maxi(1, int(ceil(missile.velocity.length() * delta / 3.0)))
 			for substep in range(substeps):
 				missile.velocity += arena.projectile_gravity_at(missile.position, true, true) * delta / float(substeps)

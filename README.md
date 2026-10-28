@@ -162,7 +162,9 @@ strongly than craft**: Pulse Laser bullets experience **8× the normal pull**,
 unguided rockets **9×**, and guided missiles **14×**. This produces
 noticeably bent bullet paths and can overpower a homing missile's
 steering near the centre. Guidance preserves gravity-induced speed and
-heading changes instead of resetting them every frame.
+heading changes instead of resetting them every frame. Steering authority
+also decreases inside the strongest part of the field, so missiles can
+be pulled off course before they regain control.
 
 **Local Drones actively avoid the well.** Both standard sentries and
 long-range variants interrupt normal patrol, pursuit or idle behaviour
