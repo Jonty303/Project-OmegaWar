@@ -3,6 +3,7 @@ extends "res://scripts/rocket.gd"
 # Small guided hostile missile. Detonates on the FIRST physical contact,
 # including arena walls/core, asteroids and either team's ships.
 const SPEED := 375.0
+var cruise_speed := SPEED
 const TURN_RATE := 2.85
 const BLAST_RANGE := 48.0
 const DAMAGE := 1.0
@@ -32,9 +33,9 @@ func steer(delta: float, target_position: Vector2) -> void:
 		current = desired
 	if not desired.is_zero_approx():
 		var angle: float = rotate_toward(current.angle(), desired.angle(), TURN_RATE * delta)
-		velocity = Vector2.from_angle(angle) * SPEED
+		velocity = Vector2.from_angle(angle) * cruise_speed
 	elif velocity.is_zero_approx():
-		velocity = Vector2.RIGHT * SPEED
+		velocity = Vector2.RIGHT * cruise_speed
 	sync_visual_heading()
 
 func _draw() -> void:
