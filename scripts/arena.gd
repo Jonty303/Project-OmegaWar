@@ -13,6 +13,7 @@ const DRONE_LOOKAHEAD := 82.0
 
 signal wall_bounced(at: Vector2, speed: float)
 signal asteroid_struck(at: Vector2, power: float)
+signal projectile_rebounded
 
 var asteroids: Array[Node2D] = []
 var drone_bodies: Array[Node2D] = []
@@ -251,6 +252,8 @@ func register_bounce(next: Vector2, radius: float, x_axis: bool, travel: float, 
 	flash_nearest(at)
 	if debris and speed >= 25.0:
 		wall_bounced.emit(at, speed)
+	elif not debris:
+		projectile_rebounded.emit()
 
 func blocked(point: Vector2, radius: float = 0.0) -> bool:
 	return blocked_static(point, radius) or asteroid_at(point, radius) != null

@@ -84,6 +84,7 @@ func _ready() -> void:
 	add_child(arena)
 	add_child(sound_bus)
 	arena.wall_bounced.connect(on_wall_bounced)
+	arena.projectile_rebounded.connect(on_projectile_rebounded)
 	arena.asteroid_struck.connect(on_asteroid_struck)
 	hud.position = Vector2(40, 20)
 	hud.add_theme_font_size_override("font_size", 20)
@@ -210,9 +211,6 @@ func choose_upgrade(index: int) -> void:
 	waiting_for_wave = true
 	wave_delay = 5.0
 	update_hud()
-
-func menu_choice_buttons() -> Array[Button]:
-	return bonus_buttons if bonus_active else [pause_resume_button, pause_reset_button]
 
 func set_paused(value: bool) -> void:
 	paused = value
@@ -355,9 +353,12 @@ func _physics_process(delta: float) -> void:
 		return
 	ship.step(delta, arena)
 	if Input.is_action_pressed("fire"):
-		for shot in ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation)):
-			spawn_shot(shot.position, shot.velocity, false, shot.damage, shot.max_range)
+		var volley: Array[Dictionary] = ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation))
+		if not volley.is_empty():
 			ship.fired_primary()
+			sound_bus.play("pulse")
+		for shot in volley:
+			spawn_shot(shot.position, shot.velocity, false, shot.damage, shot.max_range, shot.radius)
 	if Input.is_action_just_pressed("fire_secondary"):
 		fire_player_rocket()
 	for enemy in enemies:
@@ -370,6 +371,7 @@ func _physics_process(delta: float) -> void:
 					launch_enemy_homing_missile(enemy)
 				else:
 					spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * 225.0, true)
+					sound_bus.play("pulse")
 				enemy.fired()
 	resolve_collisions()
 	resolve_drone_spacing()
@@ -404,6 +406,7 @@ func begin_player_death() -> void:
 	# Larger, longer-lived burst than ordinary hits: the ship disintegrates
 	# into moving wreckage before the game-over banner appears.
 	spawn_debris(ship.position, Color(0.3, 1.0, 0.95), 2.1, 32, DEATH_EXPLOSION_TIME)
+	sound_bus.play("explosion")
 	arena.apply_blast(ship.position, 850.0, 180.0)
 
 func resolve_drone_spacing() -> void:
@@ -488,7 +491,7 @@ func notify_drones_of_hit(victim: Node2D, incoming_velocity: Vector2 = Vector2.Z
 	for observer in enemies:
 		if observer.is_repair_bot:
 			continue
-		observer.alert_to_ally_hit(victim.position, arena, observer == victim)
+		observer.alert_to_ally_hit(victim.position, arena, observer == victim, incoming_velocity)
 	if victim.is_repair_bot and victim.health > 0.0:
 		victim.alert_incoming_fire(incoming_velocity, enemies)
 	elif victim.health > 0.0:
@@ -516,6 +519,7 @@ func self_destruct_orphaned_repair_bots() -> void:
 		arena.apply_blast(bot.position, 190.0, 65.0)
 		enemies.remove_at(index)
 		bot.queue_free()
+	sound_bus.play("explosion")
 	# Wave-clear countdown is handled normally after the final bot is gone.
 
 func alert_repair_bots_to_fire(shot_position: Vector2, shot_velocity: Vector2) -> void:
@@ -562,7 +566,7 @@ func step_shots(delta: float) -> void:
 				else:
 					for j in range(enemies.size() - 1, -1, -1):
 						var enemy = enemies[j]
-						if shot.position.distance_to(enemy.position) < enemy.COLLISION_RADIUS + Projectile.HIT_RADIUS:
+						if shot.position.distance_to(enemy.position) < enemy.COLLISION_RADIUS + shot.hit_radius:
 							enemy.velocity += shot.velocity.normalized() * 30.0
 							var destroyed: bool = enemy.take_damage(shot.damage)
 							notify_drones_of_hit(enemy, shot.velocity)
@@ -570,6 +574,8 @@ func step_shots(delta: float) -> void:
 							spawn_debris(shot.position, tint, 0.8)
 							hit_target = true
 							if destroyed:
+								if not shot.cascade_shard:
+									maybe_cascade(enemy.position)
 								defeat_enemy(j)
 							break
 					if hit_target:
@@ -579,6 +585,19 @@ func step_shots(delta: float) -> void:
 			shot.queue_free()
 		elif shot.lifetime <= 0.0 or shot.bounces_left <= 0 or shot.distance_travelled >= shot.max_range:
 			shot.begin_disintegrate()
+
+func maybe_cascade(at: Vector2) -> void:
+	# Pulse-specific on-kill proc. Shards are deliberately unable to
+	# recursively generate another cascade.
+	if ship.weapon.cascade_chance <= 0.0 or randf() >= ship.weapon.cascade_chance:
+		return
+	for direction_index in range(8):
+		var direction: Vector2 = Vector2.from_angle(TAU * float(direction_index) / 8.0)
+		var origin: Vector2 = at + direction * 17.0
+		if arena.blocked(origin, 2.0):
+			continue
+		spawn_shot(origin, direction * CASCADE_SHARD_SPEED, false, CASCADE_SHARD_DAMAGE, CASCADE_SHARD_RANGE, 2.0, true)
+	sound_bus.play("explosion")
 
 func launch_enemy_homing_missile(enemy: Node2D) -> void:
 	var origin: Vector2 = enemy.muzzle_position()
@@ -590,6 +609,7 @@ func launch_enemy_homing_missile(enemy: Node2D) -> void:
 	missile.sync_visual_heading()
 	homing_missiles.append(missile)
 	add_child(missile)
+	sound_bus.play("missile")
 
 func step_homing_missiles(delta: float) -> void:
 	for index in range(homing_missiles.size() - 1, -1, -1):
@@ -649,8 +669,10 @@ func fire_player_rocket() -> void:
 	rockets.append(missile)
 	add_child(missile)
 	ship.fired_secondary()
+	sound_bus.play("missile")
 
 func detonate_rocket(rocket: Node2D) -> void:
+	sound_bus.play("explosion")
 	var origin: Vector2 = rocket.position
 	var radius: float = rocket.blast_radius
 	var strength: float = rocket.blast_impulse
@@ -750,14 +772,16 @@ func step_effects(delta: float) -> void:
 			effects.remove_at(i)
 			effect.queue_free()
 
-func spawn_shot(origin: Vector2, velocity: Vector2, hostile: bool, damage: float = 1.0, range_limit: float = Projectile.MAX_RANGE) -> void:
-	if arena.blocked(origin, Projectile.HIT_RADIUS):
+func spawn_shot(origin: Vector2, velocity: Vector2, hostile: bool, damage: float = 1.0, range_limit: float = Projectile.MAX_RANGE, radius: float = Projectile.HIT_RADIUS, cascade_shard: bool = false) -> void:
+	if arena.blocked(origin, radius):
 		return
 	var shot := Projectile.new()
 	shot.position = origin
 	shot.velocity = velocity
 	shot.damage = damage
 	shot.max_range = range_limit
+	shot.hit_radius = radius
+	shot.cascade_shard = cascade_shard
 	shot.sync_visual_heading()
 	shot.hostile = hostile
 	shots.append(shot)
@@ -848,6 +872,9 @@ func _draw() -> void:
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			StatusBars.draw_for(self, enemy.health, enemy.max_health, enemy.shields, enemy.max_shields, -27.0 - enemy.COLLISION_RADIUS * 0.3, enemy.position)
+
+func on_projectile_rebounded() -> void:
+	sound_bus.play("rebound")
 
 func update_hud() -> void:
 	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HOSTILES %02d" % [score, wave, enemies.size()]

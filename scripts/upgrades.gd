@@ -23,7 +23,10 @@ static func offer(ship: Node2D) -> Array[Dictionary]:
 			continue
 		pool.append(choice)
 	pool.shuffle()
-	return [pool[0], pool[1], pool[2]]
+	var offers: Array[Dictionary] = []
+	for i in range(3):
+		offers.append(pool[i])
+	return offers
 
 static func apply(ship: Node2D, name: String) -> bool:
 	match name:
