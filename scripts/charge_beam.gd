@@ -1,7 +1,7 @@
 extends RefCounted
 
-# Experimental primary weapon. Holding fire charges the capacitor;
-# releasing emits one instantaneous, piercing beam. No ricochet.
+# Lightning Gun: a charged, instantaneous flash released by primary fire.
+# Range and damage scale with charge; it is always absorbed by walls.
 const MIN_CHARGE := 0.10
 const MAX_CHARGE := 1.50
 const COOLDOWN := 0.55
