@@ -508,6 +508,23 @@ func choose_target(side: float, previous: int) -> int:
             best = j
     return best
 
+func choose_hostile_missile(side: float) -> int:
+    # Rudimentary close-in point defence: active batteries interrupt their
+    # ship target while a hostile missile enters their arc and line of sight.
+    var axis := Vector2(side, 0.0).rotated(ship_angle)
+    var chosen := -1
+    var nearest := INF
+    for j in range(missiles.size()):
+        var m: Dictionary = missiles[j]
+        if not bool(m["hostile"]):
+            continue
+        var position: Vector2 = m["pos"]
+        var square_distance := ship_pos.distance_squared_to(position)
+        if square_distance < nearest and arc_valid(ship_pos, axis, position, BATTERY_HALF_ARC, 610.0) and line_clear(ship_pos, position):
+            nearest = square_distance
+            chosen = j
+    return chosen
+
 func process_battery_order(side: float) -> void:
     var ordered: bool = port_order if side < 0.0 else starboard_order
     if not ordered:
@@ -522,7 +539,7 @@ func process_battery_order(side: float) -> void:
     var ammo: float = port_ammo if side < 0.0 else starboard_ammo
     if cooldown > 0.0 or ammo < 2.0:
         return
-    fire_broadside(side, next_target)
+    fire_broadside(side, next_target, choose_hostile_missile(side))
     if side < 0.0:
         port_cooldown = BROADSIDE_INTERVAL
         port_ammo -= 2.0
@@ -532,15 +549,27 @@ func process_battery_order(side: float) -> void:
         starboard_ammo -= 2.0
         starboard_flash = 0.12
 
-func fire_broadside(side: float, selected: int = -1) -> void:
+func fire_broadside(side: float, selected: int = -1, missile_target: int = -1) -> void:
     var outward := Vector2(side, 0.0).rotated(ship_angle)
     var aim := outward
-    if selected >= 0 and selected < targets.size():
-        var requested: Vector2 = Vector2(targets[selected]["pos"]) - ship_pos
-        if requested.length_squared() > 0.1 and arc_valid(ship_pos, outward, targets[selected]["pos"], BATTERY_HALF_ARC, BATTERY_RANGE) and line_clear(ship_pos, targets[selected]["pos"]):
-            # Simple predictive lead on moving ships.
+    var focus := Vector2.ZERO
+    var focus_velocity := Vector2.ZERO
+    var has_focus := false
+    if missile_target >= 0 and missile_target < missiles.size():
+        var missile: Dictionary = missiles[missile_target]
+        if bool(missile["hostile"]):
+            focus = missile["pos"]
+            focus_velocity = missile["vel"]
+            has_focus = true
+    elif selected >= 0 and selected < targets.size() and not bool(targets[selected]["destroyed"]):
+        focus = targets[selected]["pos"]
+        focus_velocity = targets[selected]["velocity"]
+        has_focus = true
+    if has_focus and arc_valid(ship_pos, outward, focus, BATTERY_HALF_ARC, BATTERY_RANGE) and line_clear(ship_pos, focus):
+        var requested := focus - ship_pos
+        if requested.length_squared() > 0.1:
             var prediction := requested.length() / SHELL_SPEED
-            aim = (requested + Vector2(targets[selected]["velocity"]) * prediction).normalized()
+            aim = (requested + focus_velocity * prediction).normalized()
             var offset := wrapf(aim.angle() - outward.angle(), -PI, PI)
             aim = outward.rotated(clampf(offset, -BATTERY_HALF_ARC, BATTERY_HALF_ARC))
     for station in [-21.0, 21.0]:
@@ -997,7 +1026,9 @@ func shot_intercepts_missile(shot_start: Vector2, shot_end: Vector2, shot_hostil
         var crossing: Variant = Geometry2D.segment_intersects_segment(shot_start, shot_end, m_start, m_end)
         if missed_squared > radius_squared and crossing == null:
             continue
-        var detonation: Vector2 = crossing if crossing != null else at_start
+        var detonation: Vector2 = at_start
+        if crossing != null:
+            detonation = Vector2(crossing)
         missile_detonate(detonation, -1, false, bool(missile["hostile"]))
         missiles.remove_at(i)
         return true
@@ -1503,6 +1534,10 @@ func draw_hud() -> void:
     var star_status := "ON" if starboard_order else "OFF"
     var port_lock: String = String(targets[port_target]["name"]) if port_target >= 0 else "STRAIGHT FIRE"
     var star_lock: String = String(targets[starboard_target]["name"]) if starboard_target >= 0 else "STRAIGHT FIRE"
+    if port_order and choose_hostile_missile(-1.0) >= 0:
+        port_lock = "POINT DEFENCE"
+    if starboard_order and choose_hostile_missile(1.0) >= 0:
+        star_lock = "POINT DEFENCE"
     draw_string(font, Vector2(25, 87), "PORT  %s  [%02d]  %s" % [port_status, int(port_ammo), port_lock],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, PORT_COLOR if port_order else MUTED)
     draw_string(font, Vector2(378, 87), "STBD  %s  [%02d]  %s" % [star_status, int(starboard_ammo), star_lock],
