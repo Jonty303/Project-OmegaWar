@@ -1,75 +1,66 @@
-# Omega War: Fleet Command — First Contact
+# Omega War — Fleet Command: First Contact (Heavy Weapons Pass)
 
-**Branch:** `codex/omega-war-fleet-combat`  
-**Engine:** Godot 4.5.2  
-**Scope:** First playable, single-flagship combat experiment (not the fleet campaign yet).
+**Godot 4.5.2** · Branch: `codex/omega-war-fleet-combat`
 
-The original `codex/omega-war-classic-baseline` is unchanged. This branch boots the separate `scenes/fleet_test.tscn` gunnery/combat scene when you press **F5** from `project.godot`.
+A separate capital-ship combat prototype in a **6,000 × 4,200** world. Open `project.godot` and press **F5**. The classic baseline branch remains untouched.
 
-## First Contact: what to test
+This pass focuses on the flagship's weapon roles, motion readability and destructive consequences. The two moving enemies remain: a slow broadside cruiser and a nimble forward-gun frigate. Asteroids and the gravity well remain on the map, with a cached static scenery layer and FPS overlay.
 
-Pilot a deliberately heavy flagship through a **6,000 × 4,200** world against two moving enemies:
+## Xbox-style controller
 
-- A **heavy cruiser** with port/starboard batteries. It accelerates and turns slowly, closes the distance when too far away, attempts to establish a broadside at engagement range, and retreats when the player gets too close.
-- A **smaller frigate**, faster and more agile, with a forward gun. It attempts to approach and turn onto the flagship.
-- Both have hull and **recharging shields**, collisions against asteroid cover, basic gravity-well avoidance, weapon cooldowns and finite firing arcs. They aim using a simple predictive lead rather than perfect hitscan accuracy.
+| Input | Effect |
+| --- | --- |
+| Left stick up | Forward thrust |
+| Left stick down | **Reverse thrust** (not friction/brake); can move backwards from rest |
+| Left stick left / right | Slow, inertial hull rotation |
+| **X** (left face) | Toggle persistent automatic **port** battery order |
+| **B** (right face) | Toggle persistent automatic **starboard** battery order |
+| **Y** (top face) | **Press once** to start a 5-second spinal-beam charge; press again to **cancel** |
+| **A** (bottom face) | Launch a four-missile **cold-launch** aft salvo |
+| D-pad | Not assigned yet; reserved for directional shield controls |
 
-The ship is smaller on screen (0.52× starting camera zoom), with smooth tracking and a strategic radar. The starfield, asteroid drawings, grid and gravity rings are in a **cached scenery layer** for performance.
+Keyboard: **W/S** forward/reverse, **A/D** turn, **Q/E** toggle port/starboard fire orders, **Space** press once to arm beam / press again to cancel, **F** launch missiles, **C** cease fire on both gun batteries, **V** show firing/targeting arcs, **-/=** zoom, **R** restart.
 
-## Controller layout — left-stick piloting, face-button fire orders
+## Main batteries
 
-| Xbox-layout face button | Action | Equivalent keyboard |
-| --- | --- | --- |
-| **Left stick up** | Main thrust | W / Up |
-| **Left stick down** | Brake | S / Down |
-| **Left stick left/right** | Rotate heavy hull | A/D or Left/Right |
-| **X (left face)** | Toggle **port battery** automatic fire order | Q |
-| **B (right face)** | Toggle **starboard battery** automatic fire order | E |
-| **Y (upper face)** | **Hold to charge** bow beam, release to fire | Hold/release Space |
-| **A (lower face)** | **Cease fire** on both side batteries | C |
-| — | Toggle visible target/firing arc overlays | V |
-| — | Change tactical camera zoom | - / = |
-| — | Reset the engagement | R |
+Port and starboard guns auto-acquire enemies within their 120° firing arcs and 800-unit range, respecting asteroid obstruction. They retain an existing lock within a slightly wider 150° targeting arc. Pressing the corresponding button toggles sustained fire; without a valid target they shoot straight outwards, consuming ammunition. Batteries have per-side ammo, cooldown and gradual ammunition replenishment. Press **V** for the debug overlay showing firing/vision arcs, enemy arcs and target locks.
 
-The **D-pad and triggers are deliberately unassigned** in this test, reserving them for future shield-direction and command-menu controls. Face-button positions are used as the mnemonic: left = port, right = starboard, top = bow, bottom = cease.
+## Spinal beam — shield interception versus hull penetration
 
-## Automatic batteries
+- **Tap Y / Space** to arm a **5-second automatic countdown**. The ship progressively surrenders propulsion power during the charge. The beam fires itself when the countdown reaches zero: there is **no hold/release requirement**.
+- **Tap again before firing** to abort. Cancellation dumps the charge and imposes a short recovery cooldown.
+- Beam grows out from the ship's bow in a slightly wandering line. Rocks absorb it; the arena boundary can reflect it.
+- If it meets an **active enemy shield**, the shield takes very heavy damage and **absorbs the entire discharge**. Even if this shot depletes the shield, it does not punch through in that same shot; the flare marks the shield's position.
+- If the target's **shield is already depleted**, the beam inflicts **massive hull damage**, visually cuts through the ship's silhouette with a bright entry-to-exit wound, and **continues beyond** to potentially damage another ship.
+- Penetrated vessels vent glowing debris and a small smoke/atmosphere trail from the breach. Damage to each hull is applied only once per discharge, never once per rendering frame.
 
-- Tap **Q / X** or **E / B** to order the corresponding battery to **open fire**. Tap again to order **cease fire**. Both side batteries can be active simultaneously.
-- Each battery independently **acquires an enemy within its 120° firing arc**, no farther than **800 units**, with an unobstructed line of sight past asteroids.
-- Acquired targets persist within a slightly wider **150° tracking arc**, but guns only shoot a tracked ship when it's actually within the narrower firing arc.
-- If there is no valid target, the battery still fires outward along the default perpendicular side direction. This uses ammunition, so remember to cease fire.
-- Each battery fires a two-shell volley every **0.56 seconds**, with a finite magazine (18 shells) replenishing gradually (1.7 shells/second). They keep attempting to fire automatically as long as the order is active.
-- **V** overlays the firing arcs, tracking arcs and enemy weapon arcs; faint lines reveal current battery target locks.
-- Projectiles from either side are physically simulated and take strong deflection inside the gravity well; rocks block them.
+## Macross-style aft missile system
 
-## Bow spinal weapon
+- **A / F** ejects **four independent small missiles from the stern**. They initially drift with the flagship's inertia and spread away from the hull without engines.
+- After **one second**, rocket motors ignite, leaving blue curved trails. Each missile independently finds the nearest living hostile, predicts its movement and uses bounded-turn steering to home toward it.
+- A short-range avoidance controller bends guidance around **asteroids** and the friendly flagship. Ally clearance is deliberately structured for later friendly AI vessels, but **there are no allied ships yet**.
+- **Direct hits** do high damage. If a missile narrowly overshoots a target, the **proximity air-burst** produces a smaller area-damage explosion instead. Expiring or rock-struck missiles also burst, damaging enemies only if they are near the explosion.
+- Launches have a cooldown. The implementation supports a configurable salvo count (up to 96 in this prototype) so larger upgraded salvos won't need a different projectile type. Large swarms still require performance testing.
 
-Keep holding **Y / Space** to charge the beam for up to **2.4 seconds**. Propulsion gradually declines, then the ship stops at full charge. Release to fire an extending, slightly serpentine beam. Charge strength determines range and damage. The beam is physically obstructed by asteroids, and may bounce off the distant world boundary. There is a recovery cooldown.
+## Movement, collisions, visual health
 
-This is still the previous simple **charge-and-release** behaviour, not the future timed captain's firing order, final commitment phase or costly cancellation mechanic.
+- **Reverse thrust** is directional propulsion rather than a brake. Reverse acceleration and maximum reverse velocity are lower than forward values.
+- Player and enemy ships leave restrained **ion trails** aligned with *actual velocity*, not nose direction; faster motion leaves a stronger/longer trail.
+- Both friendly and hostile ships suffer **kinetic asteroid impact damage directly to hull** at sufficient approach speeds. Shields do not protect against asteroid collisions; low-speed grazing causes little or no harm.
+- The bars above enemy ships are ordered **shields on top, hull underneath**. The main HUD still displays **hull on the far left, followed by shields**.
+- Both hostiles retain hull HP and rechargeable shields. Impacts, shield flashes, debris, and victory/defeat states remain.
 
-## Hull, shields and destruction
+## Playtest checklist
 
-- Player flagship: **30 hull + 18 shields**.
-- Cruiser: **34 hull + 15 shields**.
-- Frigate: **18 hull + 7 shields**.
-- Shields absorb damage before hull. After a damage-free delay they begin to regenerate. Shield arcs brighten momentarily under fire.
-- Enemy projectiles and impacts are tinted red; player batteries use orange/blue.
-- Explosions spawn short-lived debris, and victory is achieved by destroying both enemy ships. Losing the flagship ends the test.
-- Press **R** to restart immediately.
+1. With the ship stationary, pull the left stick down: the vessel should accelerate **stern first**, leaving a trail in the correct direction.
+2. Tap **Y** once: observe the five-second countdown and propulsion loss, then automatic discharge. Start another charge and press **Y** again to verify cancellation and cooldown.
+3. Hit enemy shields with the beam: it should **terminate with a bright shield flare**, not pass through. After shield collapse, charge again to see hull damage, penetration, glowing breach and debris.
+4. Tap **A**: watch the missiles drift for one second, then ignite and arc toward moving enemies. Near-misses should detonate with weaker splash damage.
+5. Strike an asteroid fast enough to damage the **hull**, while **shield HP remains unchanged**. Repeat with an enemy if practical.
+6. Confirm shield bar position above hull; test automatic broadside firing, enemy manoeuvres and FPS with the missile salvo active.
 
-## Performance and diagnostics
+## Deferred
 
-- The 6,000 × 4,200 arena stays intact.
-- Static background geometry is drawn by `scripts/fleet_environment.gd` in a separate cached `CanvasItem`. Only dynamic objects need repeated draw commands.
-- The overlay shows **FPS**. Compare stationary, normal piloting, two sides firing, the beam discharging and viewing range arcs with V.
-- If the framerate is still poor, use the Godot Profiler to distinguish script time from renderer time before attempting further reductions in scale.
+Allied captains, personalities, voice acknowledgements, radial command menus, directional shield redistribution, mines/turrets, persistent upgrades, fires and module damage. This is still an isolated **single-flagship test**, not a fleet campaign.
 
-## Deferred intentionally
-
-Allied corvettes, captain personalities, bridge voice acknowledgements, two-level command radial menu, directional shield transfer, mines, fixed turrets, complex weapon effects (fires / penetration / subsystem disruption), campaign progression and ship upgrades.
-
-These are follow-on experiments once directional ship combat and auto-targeting are satisfying. See [the larger design concept](docs/fleet-command-concept.md).
-
-**Test status:** Committed to GitHub. No Godot runtime was available in the authoring environment to execute an engine smoke test, so run the branch in Godot 4.5.2 to confirm parsing and FPS.
+**Validation:** Source changes are committed and cross-checked. The authoring environment does not have a Godot 4.5.2 executable, so engine parsing, gameplay feel and performance must be verified by running the project in Godot.
