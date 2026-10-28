@@ -952,6 +952,13 @@ func run() -> void:
 	check(game.arena.gravity_at(field.position).is_zero_approx(), "Softened gravity has no central numerical singularity")
 	var outer_pull: Vector2 = game.arena.gravity_at(field.position + Vector2(220, 0))
 	check(outer_pull.length() < sample_pull.length(), "Gravity smoothly attenuates toward field edge")
+	var bullet_field: Vector2 = game.arena.projectile_gravity_at(sample_above)
+	var rocket_field: Vector2 = game.arena.projectile_gravity_at(sample_above, true)
+	var guided_field: Vector2 = game.arena.projectile_gravity_at(sample_above, true, true)
+	check(bullet_field.length() >= sample_pull.length() * 7.9, "Laser shots feel eight times ship gravity")
+	check(rocket_field.length() >= sample_pull.length() * 8.9, "Rockets feel nine times ship gravity")
+	check(guided_field.length() >= sample_pull.length() * 13.9, "Homing missiles feel stronger gravity than their own turn corrections")
+	check(game.arena.projectile_gravity_at(Vector2(150, 200)).is_zero_approx(), "Strong projectile pull also stops outside the field")
 	game.ship.position = field.position + Vector2(42, 0)
 	game.ship.rotation = PI / 2.0
 	game.ship.velocity = Vector2.ZERO
@@ -971,6 +978,30 @@ func run() -> void:
 	game.arena.pull_body(pulled_drone, 0.15)
 	check(pulled_drone.velocity.x < -1.0, "All drone movement types receive inward gravitational acceleration")
 	pulled_drone.free()
+
+	# Ordinary sentries and long-range variants actively seek escape even
+	# when not pursuing the player, and can out-thrust the inward field.
+	var fleeing_sentry = game.Enemy.new()
+	fleeing_sentry.position = field.position + Vector2(-96, 0)
+	game.add_child(fleeing_sentry)
+	var start_distance: float = fleeing_sentry.position.distance_to(field.position)
+	for escape_tick in range(90):
+		game.arena.pull_body(fleeing_sentry, 1.0 / 60.0)
+		fleeing_sentry.step(1.0 / 60.0, Vector2(150, 200), game.arena)
+	check(fleeing_sentry.escaping_gravity, "Idle Local Drone recognizes the gravity hazard")
+	check(fleeing_sentry.position.distance_to(field.position) > start_distance + 25.0, "Local Drone actively flies away despite the inward force")
+	check(fleeing_sentry.velocity.x < 0.0, "Local Drone acceleration overcomes gravity without teleporting")
+	fleeing_sentry.free()
+
+	var fleeing_missile_drone = game.LongRangeDrone.new()
+	fleeing_missile_drone.position = field.position + Vector2(-98, 0)
+	game.add_child(fleeing_missile_drone)
+	var standoff_start: float = fleeing_missile_drone.position.distance_to(field.position)
+	for escape_tick in range(75):
+		game.arena.pull_body(fleeing_missile_drone, 1.0 / 60.0)
+		fleeing_missile_drone.step(1.0 / 60.0, Vector2(150, 200), game.arena)
+	check(fleeing_missile_drone.position.distance_to(field.position) > standoff_start + 20.0, "Missile Local Drone variant also avoids the well")
+	fleeing_missile_drone.free()
 
 	game.spawn_shot(Vector2(830, 485), Vector2(500, 0), false)
 	check(game.shots.size() == 1, "Gravity test creates a projectile")
@@ -1000,6 +1031,57 @@ func run() -> void:
 	game.ship.position = Vector2(1090, 485)
 	game.step_homing_missiles(0.10)
 	check(game.homing_missiles.has(pulled_homing) and pulled_homing.velocity.y > 1.0, "Guided missile also feels gravity despite steering")
+	for projectile in game.homing_missiles:
+		projectile.free()
+	game.homing_missiles.clear()
+	game.ship.position = Vector2(220, 425)
+
+	# Visible curvature: straight horizontal launches gain a substantial
+	# off-axis velocity and their artwork follows the bent trajectory.
+	var bend_origin := Vector2(750, 550)
+	game.spawn_shot(bend_origin, Vector2(500, 0), false)
+	game.step_shots(0.24)
+	check(not game.shots.is_empty(), "Laser survives a strong gravity arc")
+	if not game.shots.is_empty():
+		var bending_laser = game.shots[0]
+		check(bending_laser.velocity.y > 35.0, "Laser path noticeably deflects toward the well")
+		check(bending_laser.position.y > bend_origin.y + 4.0, "Laser visibly moves off its original straight line")
+		check(bending_laser.visual_heading.y > 0.05, "Laser artwork follows its actual curved trajectory")
+	for projectile in game.shots:
+		projectile.free()
+	game.shots.clear()
+
+	var bending_rocket = game.Rocket.new()
+	bending_rocket.position = bend_origin
+	bending_rocket.velocity = Vector2(350, 0)
+	bending_rocket.sync_visual_heading()
+	game.add_child(bending_rocket)
+	game.rockets.append(bending_rocket)
+	game.step_rockets(0.24)
+	check(game.rockets.has(bending_rocket), "Unguided rocket remains live during gravitational deflection")
+	if game.rockets.has(bending_rocket):
+		check(bending_rocket.velocity.y > 35.0 and bending_rocket.position.y > bend_origin.y + 4.0, "Rocket visibly curves under strong gravitational pull")
+		check(bending_rocket.visual_heading.y > 0.05, "Rocket orientation follows bent velocity")
+	for projectile in game.rockets:
+		projectile.free()
+	game.rockets.clear()
+
+	# Guidance must not erase gravity at the start of every physics frame.
+	# A missile aiming horizontally still drifts toward the well.
+	var bending_guided = game.HomingMissile.new()
+	bending_guided.position = bend_origin
+	bending_guided.velocity = Vector2(bending_guided.SPEED, 0)
+	game.add_child(bending_guided)
+	game.homing_missiles.append(bending_guided)
+	game.ship.position = Vector2(1090, bend_origin.y)
+	for bend_tick in range(20):
+		if game.homing_missiles.is_empty():
+			break
+		game.step_homing_missiles(1.0 / 60.0)
+	check(game.homing_missiles.has(bending_guided), "Guided missile remains live while crossing gravity field")
+	if game.homing_missiles.has(bending_guided):
+		check(bending_guided.position.y > bend_origin.y + 1.0, "Strong pull visibly deflects homing missile despite steering")
+		check(bending_guided.velocity.y > 12.0, "Guided missile retains gravity acceleration across steering frames")
 	for projectile in game.homing_missiles:
 		projectile.free()
 	game.homing_missiles.clear()
