@@ -28,6 +28,7 @@ Open `project.godot` using **Godot 4.5.2** and press **F5**. The project now ope
 - **Capital ship targets:** one ahead and one on each beam/broadside line; they have warship silhouettes, armour bars, and respawn after destruction. They are **stationary, unarmed targets**, not implemented enemy AI.
 - **Environmental space:** sparse, physically blocking asteroid clusters and one distant gravity well (pulling the ship and deflecting shells) give the theatre landmarks and room for later turrets, mines and fleet encounters. The beam is absorbed by asteroids but can rebound from the arena perimeter.
 - **Presentation:** vector-style warship, glowing charging emitter, beam and shell trails, hit markers and very quiet procedural sounds borrowed from the classic project.
+- **Performance pass (October 28):** static grid, starfield, asteroid silhouettes and gravity rings are now rendered by `scripts/fleet_environment.gd` in a separate **cached CanvasItem**; the main ship scene only redraws moving objects. The static scenery's camera transform changes without rebuilding the draw commands. Star count is reduced from 1,800 to 850. The top-right HUD shows current **FPS** to compare performance on your machine. Battlefield size and ship zoom are unchanged.
 
 ## Deliberately not in this first test
 
@@ -44,4 +45,4 @@ For the wider experiment and later feature proposals, read [the Fleet Command co
 5. Fly toward one of the distant asteroid clusters or the gravity anomaly. Try **- / =** to compare framing.
 6. Hold thrust while charging the beam: propulsion should fade as charge builds. Tap **R** to repeat.
 
-**Validation note:** This scene has been committed to GitHub, but Godot is not available in this authoring environment to execute a headless runtime test. Verify locally with F5 before treating it as a confirmed runnable build.
+**Validation note:** The changes are committed to GitHub, but Godot is not available in this authoring environment to run a headless benchmark. Please test with F5 and check the FPS counter at the top right. In particular, compare idle FPS with constant movement/turning and continuous broadside fire. If performance remains poor, the next step should be a captured Godot Profiler frame rather than further speculative visual changes.
