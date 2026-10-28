@@ -2,6 +2,7 @@ extends Node2D
 
 const Projectile = preload("res://scripts/projectile.gd")
 const Asteroid = preload("res://scripts/asteroid.gd")
+const GravityWell = preload("res://scripts/gravity_well.gd")
 
 const BOUNDS := Rect2(40, 110, 1120, 630)
 const CORE := Rect2(490, 330, 220, 190)
@@ -16,6 +17,17 @@ signal asteroid_struck(at: Vector2, power: float)
 signal projectile_rebounded
 
 var asteroids: Array[Node2D] = []
+var gravity_well := GravityWell.new()
+
+func gravity_at(point: Vector2) -> Vector2:
+	return gravity_well.acceleration_at(point)
+
+func pull_body(body: Node2D, delta: float) -> void:
+	body.velocity += gravity_at(body.position) * delta
+
+func advance_gravity(delta: float) -> void:
+	gravity_well.advance(delta)
+
 var drone_bodies: Array[Node2D] = []
 
 func set_drone_bodies(bodies: Array[Node2D]) -> void:
@@ -88,6 +100,7 @@ var segments: Array[Dictionary] = []
 
 func _ready() -> void:
 	build_sections()
+	add_child(gravity_well)
 	spawn_asteroids()
 
 func spawn_asteroids() -> void:
@@ -130,6 +143,8 @@ func advance_asteroids(delta: float, bodies: Array) -> void:
 	# Heavy rocks drift under impulses; environmental resistance eventually
 	# settles them, unlike the player's frictionless inertial movement.
 	for rock in asteroids:
+		# Very heavy rocks feel only a quarter of the ship field pull.
+		rock.velocity += gravity_at(rock.position) * delta * 0.25
 		var speed: float = rock.velocity.length()
 		if speed < 0.06:
 			rock.velocity = Vector2.ZERO
