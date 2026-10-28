@@ -18,8 +18,12 @@ signal projectile_rebounded
 
 var asteroids: Array[Node2D] = []
 var gravity_well := GravityWell.new()
+# Classic mode is untouched; the dedicated flight-test scene enables this.
+var flight_test_mode := false
 
 func gravity_at(point: Vector2) -> Vector2:
+	if flight_test_mode:
+		return Vector2.ZERO
 	return gravity_well.acceleration_at(point)
 
 func projectile_gravity_at(point: Vector2, is_rocket: bool = false, is_homing: bool = false) -> Vector2:
@@ -61,7 +65,8 @@ func pull_body(body: Node2D, delta: float) -> void:
 	body.velocity += gravity_at(body.position) * delta
 
 func advance_gravity(delta: float) -> void:
-	gravity_well.advance(delta)
+	if not flight_test_mode:
+		gravity_well.advance(delta)
 
 var drone_bodies: Array[Node2D] = []
 
@@ -136,9 +141,12 @@ var segments: Array[Dictionary] = []
 func _ready() -> void:
 	build_sections()
 	add_child(gravity_well)
+	gravity_well.visible = not flight_test_mode
 	spawn_asteroids()
 
 func spawn_asteroids() -> void:
+	if flight_test_mode:
+		return
 	# Two persistent pieces of cover in the upper-right corner.
 	for spec in [
 		{"at": Vector2(924, 226), "radius": 37.0, "mass": 24.0},
@@ -160,7 +168,7 @@ func asteroid_at(point: Vector2, padding: float = 0.0):
 	return null
 
 func blocked_static(point: Vector2, radius: float = 0.0) -> bool:
-	return not BOUNDS.grow(-radius).has_point(point) or CORE.grow(radius).has_point(point)
+	return not BOUNDS.grow(-radius).has_point(point) or (not flight_test_mode and CORE.grow(radius).has_point(point))
 
 func circle_segment_hits(from: Vector2, to: Vector2, center: Vector2, radius: float) -> bool:
 	var closest: Vector2 = Geometry2D.get_closest_point_to_segment(center, from, to)
@@ -245,12 +253,13 @@ func build_sections() -> void:
 	add_sections(Vector2(c.x, a.y), c, 3, false)
 	add_sections(c, Vector2(a.x, c.y), 5, false)
 	add_sections(Vector2(a.x, c.y), a, 3, false)
-	a = CORE.position
-	c = CORE.end
-	add_sections(a, Vector2(c.x, a.y), 3, true)
-	add_sections(Vector2(c.x, a.y), c, 3, true)
-	add_sections(c, Vector2(a.x, c.y), 3, true)
-	add_sections(Vector2(a.x, c.y), a, 3, true)
+	if not flight_test_mode:
+		a = CORE.position
+		c = CORE.end
+		add_sections(a, Vector2(c.x, a.y), 3, true)
+		add_sections(Vector2(c.x, a.y), c, 3, true)
+		add_sections(c, Vector2(a.x, c.y), 3, true)
+		add_sections(Vector2(a.x, c.y), a, 3, true)
 	queue_redraw()
 
 func reset_flashes() -> void:
@@ -400,7 +409,7 @@ func has_line_of_sight(from: Vector2, to: Vector2) -> bool:
 	# Sensor and weapon checks use the same obstruction geometry as navigation.
 	if blocked(from) or blocked(to):
 		return false
-	if segment_hits_rect(from, to, CORE.grow(1.0)):
+	if not flight_test_mode and segment_hits_rect(from, to, CORE.grow(1.0)):
 		return false
 	for rock in asteroids:
 		if circle_segment_hits(from, to, rock.position, rock.radius + 2.0):
@@ -423,7 +432,7 @@ func segment_hits_rect(from: Vector2, to: Vector2, rect: Rect2) -> bool:
 	)
 
 func navigation_clear(from: Vector2, to: Vector2, radius: float) -> bool:
-	if segment_hits_rect(from, to, CORE.grow(radius + 4.0)):
+	if not flight_test_mode and segment_hits_rect(from, to, CORE.grow(radius + 4.0)):
 		return false
 	for rock in asteroids:
 		if circle_segment_hits(from, to, rock.position, rock.radius + radius + 4.0):
@@ -486,7 +495,8 @@ func _draw() -> void:
 		draw_line(Vector2(x, 110), Vector2(x, 740), Color(0.04, 0.10, 0.16))
 	for y in range(110, 741, 40):
 		draw_line(Vector2(40, y), Vector2(1160, y), Color(0.04, 0.10, 0.16))
-	draw_rect(CORE, Color(0.035, 0.06, 0.12))
+	if not flight_test_mode:
+		draw_rect(CORE, Color(0.035, 0.06, 0.12))
 	for segment in segments:
 		var base := Color(0.5, 0.35, 0.95) if segment["inner"] else Color(0.15, 0.85, 0.9)
 		var flash: float = clampf(float(segment["flash"]) / FLASH_SECONDS, 0.0, 1.0)
@@ -494,5 +504,6 @@ func _draw() -> void:
 		if flash > 0.0:
 			draw_line(segment["a"], segment["b"], Color(bright.r, bright.g, bright.b, flash * 0.28), 10.0, true)
 		draw_line(segment["a"], segment["b"], bright, 3.0 + flash * 2.0, true)
-	draw_rect(CORE.grow(-12), Color(0.25, 0.18, 0.5), false, 1)
-	draw_string(ThemeDB.fallback_font, Vector2(530, 420), "OMEGA CORE", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.65, 0.5, 1))
+	if not flight_test_mode:
+		draw_rect(CORE.grow(-12), Color(0.25, 0.18, 0.5), false, 1)
+		draw_string(ThemeDB.fallback_font, Vector2(530, 420), "OMEGA CORE", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.65, 0.5, 1))
