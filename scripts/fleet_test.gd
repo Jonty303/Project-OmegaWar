@@ -50,6 +50,14 @@ const AMMO_CAPACITY := 18.0
 const AMMO_RECHARGE := 1.7
 const CRUISER_WEAPON_RANGE := 760.0
 const FRIGATE_WEAPON_RANGE := 610.0
+const MAX_ACTIVE_ASTEROIDS := 110
+const MAX_KINETIC_FRAGMENTS := 144
+const ASTEROID_MISSILE_DAMAGE := 11.0
+const ASTEROID_BLAST_RADIUS := 100.0
+const ROCK_TIER_LARGE := 3
+const ROCK_TIER_MEDIUM := 2
+const ROCK_TIER_SMALL := 1
+const SCANNER_RANGES := [1100.0, 1900.0, 3250.0, 4700.0]
 
 const WHITE := Color(0.80, 0.91, 0.97)
 const MUTED := Color(0.43, 0.57, 0.70)
@@ -111,6 +119,11 @@ var impacts: Array[Dictionary] = []
 var debris: Array[Dictionary] = []
 var targets: Array[Dictionary] = []
 var asteroids: Array[Dictionary] = []
+var kinetic_fragments: Array[Dictionary] = []
+var scanner_level := 0
+var next_rock_id := 1
+var beam_fire_time := -1.0
+var asteroids_destroyed := 0
 var environment := FleetScenery.new()
 var sound_bus := SoundBus.new()
 
@@ -119,8 +132,8 @@ func _ready() -> void:
     add_child(sound_bus)
     setup_asteroids()
     setup_targets()
-    # Static scenery owns its own cached draw list. Ship/weapon redraws will
-    # not rebuild the starfield, asteroid polygons, grid or gravity rings.
+    # Scenery caches stars, grid and gravity rings; destructible rocks
+    # live in the dynamic layer so they can move and fragment.
     environment.show_behind_parent = true
     environment.configure(FIELD, GRAVITY_CENTER, GRAVITY_RADIUS, asteroids)
     add_child(environment)
@@ -143,6 +156,7 @@ func make_inputs() -> void:
     key_action("fc_cease", KEY_C)
     key_action("fc_missile", KEY_F)
     key_action("fc_arcs", KEY_V)
+    key_action("fc_scanner", KEY_T)
     key_action("fc_zoom_out", KEY_MINUS)
     key_action("fc_zoom_in", KEY_EQUAL)
     # Left stick is full directional propulsion/turning. Face buttons:
@@ -189,8 +203,32 @@ func setup_asteroids() -> void:
         Vector3(740, 1300, 120), Vector3(5390, 2880, 74),
         Vector3(2280, 3420, 48), Vector3(3210, 750, 67)
     ]
+    next_rock_id = 1
+    asteroids_destroyed = 0
     for location in locations:
-        asteroids.append({"pos": Vector2(location.x, location.y), "radius": location.z})
+        var radius: float = location.z
+        var tier := ROCK_TIER_LARGE if radius >= 68.0 else (ROCK_TIER_MEDIUM if radius >= 42.0 else ROCK_TIER_SMALL)
+        add_asteroid(Vector2(location.x, location.y), radius, tier, Vector2.ZERO, -1.0)
+
+func rock_max_hp(tier: int) -> float:
+    if tier >= ROCK_TIER_LARGE:
+        return 13.0
+    if tier == ROCK_TIER_MEDIUM:
+        return 7.0
+    return 3.0
+
+func add_asteroid(pos: Vector2, radius: float, tier: int, vel: Vector2, born: float) -> void:
+    if asteroids.size() >= MAX_ACTIVE_ASTEROIDS:
+        return
+    var full_hp := rock_max_hp(tier)
+    asteroids.append({
+        "id": next_rock_id, "pos": pos, "radius": radius,
+        "tier": tier, "hp": full_hp, "max_hp": full_hp,
+        "velocity": vel, "angle": randf_range(-PI, PI),
+        "spin": randf_range(-0.34, 0.34), "flash": 0.0,
+        "born": born, "seed": next_rock_id * 0.773
+    })
+    next_rock_id += 1
 
 func setup_targets() -> void:
     # Two mobile enemies: an arc-aware broadside cruiser and a nimble
@@ -240,6 +278,8 @@ func reset_test() -> void:
     ion_trails.clear()
     trail_tick = 0.0
     player_shield_flash = 0.0
+    kinetic_fragments.clear()
+    setup_asteroids()
     setup_targets()
     player_hull = PLAYER_MAX_HULL
     player_shields = PLAYER_MAX_SHIELDS
@@ -262,6 +302,9 @@ func _physics_process(delta: float) -> void:
         reset_test()
     if Input.is_action_just_pressed("fc_arcs"):
         show_arcs = not show_arcs
+    if Input.is_action_just_pressed("fc_scanner"):
+        scanner_level = (scanner_level + 1) % SCANNER_RANGES.size()
+        announce("SCANNER TEST - " + scanner_name())
     if Input.is_action_just_pressed("fc_zoom_out"):
         view_zoom = maxf(0.38, view_zoom - 0.07)
     if Input.is_action_just_pressed("fc_zoom_in"):
@@ -314,6 +357,8 @@ func _physics_process(delta: float) -> void:
             charge = 0.0
             announce("SPINAL BEAM - FIRE")
 
+    advance_asteroids(delta)
+    advance_fragments(delta)
     if not player_destroyed:
         update_ship(delta)
     camera_pos = camera_pos.lerp(ship_pos, 1.0 - exp(-2.5 * delta))
@@ -1344,7 +1389,9 @@ func _draw() -> void:
     # a show_behind_parent child with independently cached draw commands.
     draw_set_transform(camera_offset, 0.0, Vector2.ONE * view_zoom)
     draw_weapon_arcs()
+    draw_asteroids()
     draw_ion_trails()
+    draw_kinetic_fragments()
     draw_targets()
     draw_smoke()
     draw_shots()
