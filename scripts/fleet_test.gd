@@ -3,6 +3,7 @@ extends Node2D
 ## The classic Omega War scripts and scene remain unchanged on this branch.
 
 const SoundBus = preload("res://scripts/sound_bus.gd")
+const Environment = preload("res://scripts/fleet_environment.gd")
 # Broad, scrolling theatre: 5x the original width, >7x its height.
 const FIELD := Rect2(0.0, 0.0, 6000.0, 4200.0)
 const VIEW_SIZE := Vector2(1200.0, 800.0)
@@ -51,19 +52,21 @@ var time_passed := 0.0
 var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
 var targets: Array[Dictionary] = []
-var stars: PackedVector2Array = PackedVector2Array()
 var asteroids: Array[Dictionary] = []
+var environment := Environment.new()
 var sound_bus := SoundBus.new()
 
 func _ready() -> void:
     make_inputs()
     add_child(sound_bus)
-    var rng := RandomNumberGenerator.new()
-    rng.seed = 48672
-    for i in range(1800):
-        stars.append(Vector2(rng.randf_range(8.0, FIELD.end.x - 8.0), rng.randf_range(8.0, FIELD.end.y - 8.0)))
     setup_asteroids()
     setup_targets()
+    # Static scenery owns its own cached draw list. Ship/weapon redraws will
+    # not rebuild the starfield, asteroid polygons, grid or gravity rings.
+    environment.show_behind_parent = true
+    environment.configure(FIELD, GRAVITY_CENTER, GRAVITY_RADIUS, asteroids)
+    add_child(environment)
+    update_environment_transform()
     queue_redraw()
 
 func make_inputs() -> void:
@@ -184,6 +187,7 @@ func _physics_process(delta: float) -> void:
     var half_view := VIEW_SIZE * (0.5 / view_zoom)
     camera_pos.x = clampf(camera_pos.x, FIELD.position.x + half_view.x, FIELD.end.x - half_view.x)
     camera_pos.y = clampf(camera_pos.y, FIELD.position.y + half_view.y, FIELD.end.y - half_view.y)
+    update_environment_transform()
     if Input.is_action_pressed("fc_port") and port_cooldown <= 0.0:
         fire_broadside(-1.0)
         port_cooldown = BROADSIDE_INTERVAL
@@ -386,15 +390,16 @@ func advance_targets(delta: float) -> void:
             if float(target["respawn"]) <= 0.0:
                 target["hp"] = target["max_hp"]
 
-func _draw() -> void:
-    # Draw the world through a smoothly following, zoomed-out tactical camera.
-    # Keep HUD in screen space so text remains readable at epic-scale zoom.
-    draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color(0.010, 0.018, 0.034), true)
+func update_environment_transform() -> void:
+    # Moving/scaling a CanvasItem does not rebuild its cached draw commands.
     camera_offset = VIEW_SIZE * 0.5 - camera_pos * view_zoom
+    environment.position = camera_offset
+    environment.scale = Vector2.ONE * view_zoom
+
+func _draw() -> void:
+    # Only moving objects and UI are redrawn every frame. The background is
+    # a show_behind_parent child with independently cached draw commands.
     draw_set_transform(camera_offset, 0.0, Vector2.ONE * view_zoom)
-    draw_background()
-    draw_gravity_well()
-    draw_asteroids()
     draw_targets()
     draw_shots()
     draw_ship()
@@ -402,43 +407,6 @@ func _draw() -> void:
     draw_impacts()
     draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
     draw_hud()
-
-func draw_background() -> void:
-    # 6,000 x 4,200 units. The borders should not normally be in view.
-    draw_rect(FIELD, Color(0.015, 0.025, 0.048), true)
-    for x in range(0, int(FIELD.size.x) + 1, 400):
-        draw_line(Vector2(x, 0), Vector2(x, FIELD.end.y), Color(0.10, 0.17, 0.23, 0.22), 1.0)
-    for y in range(0, int(FIELD.size.y) + 1, 400):
-        draw_line(Vector2(0, y), Vector2(FIELD.end.x, y), Color(0.10, 0.17, 0.23, 0.22), 1.0)
-    for i in range(stars.size()):
-        var brightness := 0.15 + float(i % 5) * 0.045
-        draw_circle(stars[i], 1.2 if i % 4 else 2.1, Color(brightness, brightness + 0.07, brightness + 0.15))
-    draw_rect(FIELD, Color(0.24, 0.38, 0.45, 0.48), false, 7.0)
-
-func draw_asteroids() -> void:
-    for i in range(asteroids.size()):
-        var rock: Dictionary = asteroids[i]
-        var centre: Vector2 = rock["pos"]
-        var radius: float = rock["radius"]
-        var outline := PackedVector2Array()
-        for n in range(10):
-            var theta := TAU * float(n) / 10.0
-            var shape := 0.84 + 0.15 * sin(float(i) * 2.17 + float(n) * 3.7)
-            outline.append(centre + Vector2.from_angle(theta) * radius * shape)
-        draw_colored_polygon(outline, Color(0.095, 0.137, 0.167))
-        var closed := outline.duplicate()
-        closed.append(outline[0])
-        draw_polyline(closed, Color(0.34, 0.45, 0.51), 3.0, true)
-        draw_line(centre + Vector2(-radius * 0.38, -radius * 0.18),
-            centre + Vector2(radius * 0.18, radius * 0.21),
-            Color(0.20, 0.29, 0.34), 3.0, true)
-
-func draw_gravity_well() -> void:
-    for r in [520.0, 365.0, 240.0, 125.0, 66.0]:
-        draw_arc(GRAVITY_CENTER, r, 0.0, TAU, 90,
-            Color(0.35, 0.32, 0.72, 0.13 if r >= 240.0 else 0.28), 2.8, true)
-    draw_circle(GRAVITY_CENTER, 32.0, Color(0.005, 0.007, 0.018))
-    draw_arc(GRAVITY_CENTER, 35.0, 0.0, TAU, 42, Color(0.54, 0.41, 0.92, 0.60), 4.0, true)
 
 func draw_targets() -> void:
     var font := ThemeDB.fallback_font
@@ -566,6 +534,7 @@ func draw_hud() -> void:
     draw_string(font, Vector2(32, 738), velocity_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
     draw_string(font, Vector2(32, 768), "W/S thrust/brake  •  A/D turn  •  Q/E broadsides  •  HOLD/RELEASE SPACE beam  •  - / = zoom  •  R reset", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, MUTED)
     draw_string(font, Vector2(32, 790), "Gamepad: left stick steer / thrust, A thrust, B brake, X/Y broadsides, RT beam. Cruiser targets respawn.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, MUTED)
+    draw_string(font, Vector2(1095, 36), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
     draw_radar()
 
 func draw_radar() -> void:
