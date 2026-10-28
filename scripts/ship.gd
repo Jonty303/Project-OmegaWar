@@ -49,6 +49,8 @@ var invulnerable := 2.0
 var thrusting := false
 var retro_active := false
 var beam_charge_visual := 0.0
+# Negative disables; 0..1 diverts the engine into the heavy beam capacitor.
+var heavy_charge_fraction := -1.0
 
 func configure(new_hull: String, new_engine: String, test_multiplier: float = 1.0) -> void:
 	profile_name = new_hull if HULL_PROFILES.has(new_hull) else "Medium"
@@ -75,7 +77,7 @@ func configure(new_hull: String, new_engine: String, test_multiplier: float = 1.
 func step(delta: float, arena: Node2D) -> void:
 	rotation += Input.get_axis("turn_left", "turn_right") * rotation_speed * delta
 	var thrust_strength := Input.get_action_strength("thrust")
-	thrusting = thrust_strength > 0.02
+	thrusting = thrust_strength > 0.02 and heavy_charge_fraction < 0.0
 	# Nothing reduces momentum passively. Thrust, brake and impacts are forces.
 	if thrusting:
 		velocity += Vector2.UP.rotated(rotation) * acceleration * thrust_multiplier * thrust_strength * delta
@@ -85,6 +87,12 @@ func step(delta: float, arena: Node2D) -> void:
 	retro_active = retro_strength > 0.02 and velocity.length() > 0.01
 	if retro_active:
 		velocity = velocity.move_toward(Vector2.ZERO, braking * retro_strength * delta)
+	if heavy_charge_fraction >= 0.0:
+		# Charging drains propulsive power; increasing electromagnetic braking
+		# eventually brings even the Light hull completely to rest.
+		velocity = velocity.move_toward(Vector2.ZERO, (115.0 + 800.0 * heavy_charge_fraction) * delta)
+		if heavy_charge_fraction >= 0.999 and velocity.length() < 12.0:
+			velocity = Vector2.ZERO
 	# Maximum ship speed is enforced without any passive damping below it.
 	# Projectile speed is deliberately higher and ignores this velocity.
 	enforce_speed_limit()
