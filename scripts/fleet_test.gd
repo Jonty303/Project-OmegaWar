@@ -20,9 +20,9 @@ const BROADSIDE_INTERVAL := 0.56
 const SHELL_SPEED := 390.0
 const BEAM_EXPAND_SPEED := 1450.0
 const BATTERY_RANGE := 800.0
-const BATTERY_HALF_ARC := deg_to_rad(60.0)
-const TRACKING_HALF_ARC := deg_to_rad(75.0)
-const BOW_HALF_ARC := deg_to_rad(10.0)
+const BATTERY_HALF_ARC := PI / 3.0
+const TRACKING_HALF_ARC := 5.0 * PI / 12.0
+const BOW_HALF_ARC := PI / 18.0
 const SHIP_RADIUS := 45.0
 const PLAYER_MAX_HULL := 30.0
 const PLAYER_MAX_SHIELDS := 18.0
@@ -69,6 +69,7 @@ var starboard_ammo := AMMO_CAPACITY
 var player_hull := PLAYER_MAX_HULL
 var player_shields := PLAYER_MAX_SHIELDS
 var player_shield_delay := 0.0
+var player_shield_flash := 0.0
 var encounter_finished := false
 var player_destroyed := false
 var show_arcs := false
@@ -76,6 +77,7 @@ var sound_message := ""
 var sound_message_timer := 0.0
 var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
+var debris: Array[Dictionary] = []
 var targets: Array[Dictionary] = []
 var asteroids: Array[Dictionary] = []
 var environment := FleetScenery.new()
@@ -193,6 +195,8 @@ func reset_test() -> void:
     starboard_cooldown = 0.0
     shots.clear()
     impacts.clear()
+    debris.clear()
+    player_shield_flash = 0.0
     setup_targets()
     player_hull = PLAYER_MAX_HULL
     player_shields = PLAYER_MAX_SHIELDS
@@ -275,6 +279,11 @@ func _physics_process(delta: float) -> void:
         impacts[i]["life"] = float(impacts[i]["life"]) - delta
         if float(impacts[i]["life"]) <= 0.0:
             impacts.remove_at(i)
+    for i in range(debris.size() - 1, -1, -1):
+        debris[i]["pos"] = Vector2(debris[i]["pos"]) + Vector2(debris[i]["vel"]) * delta
+        debris[i]["life"] = float(debris[i]["life"]) - delta
+        if float(debris[i]["life"]) <= 0.0:
+            debris.remove_at(i)
     queue_redraw()
 
 func update_ship(delta: float) -> void:
@@ -544,6 +553,7 @@ func spawn_enemy_shell(origin: Vector2, aim: Vector2, damage: float, dispersion:
 
 func recharge_shields(delta: float) -> void:
     player_shield_delay = maxf(0.0, player_shield_delay - delta)
+    player_shield_flash = maxf(0.0, player_shield_flash - delta)
     if not player_destroyed and player_shield_delay <= 0.0:
         player_shields = minf(PLAYER_MAX_SHIELDS, player_shields + 1.5 * delta)
     for enemy in targets:
@@ -560,6 +570,8 @@ func damage_player(amount: float, at: Vector2) -> void:
     player_shield_delay = 4.0
     var absorbed := minf(player_shields, amount)
     player_shields -= absorbed
+    if absorbed > 0.0:
+        player_shield_flash = 0.22
     player_hull = maxf(0.0, player_hull - (amount - absorbed))
     impacts.append({"pos": at, "life": 0.32, "color": STARBOARD_COLOR if absorbed > 0.0 else PORT_COLOR})
     if player_hull <= 0.0:
@@ -572,8 +584,13 @@ func damage_player(amount: float, at: Vector2) -> void:
 func create_explosion(at: Vector2, count: int) -> void:
     for n in range(count):
         var a := TAU * float(n) / float(count)
-        var offset := Vector2.from_angle(a) * float((n % 4) + 1) * 9.0
-        impacts.append({"pos": at + offset, "life": 0.32, "color": PORT_COLOR})
+        var speed := 65.0 + float(n % 6) * 27.0
+        debris.append({
+            "pos": at + Vector2.from_angle(a) * 10.0,
+            "vel": Vector2.from_angle(a) * speed,
+            "life": 1.3, "max_life": 1.3,
+            "color": PORT_COLOR if n % 3 == 0 else MUTED
+        })
 
 func check_encounter_result() -> void:
     if encounter_finished:
@@ -728,6 +745,7 @@ func _draw() -> void:
     draw_ship()
     draw_beam()
     draw_impacts()
+    draw_debris()
     draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
     draw_hud()
 
@@ -832,6 +850,10 @@ func draw_ship() -> void:
         Vector2(37, 29), Vector2(27, 52), Vector2(-27, 52),
         Vector2(-37, 29), Vector2(-29, -33), Vector2(-18, -53)
     ])
+    if player_shields > 0.0:
+        var shield_alpha := 0.78 if player_shield_flash > 0.0 else 0.14
+        draw_arc(Vector2.ZERO, 73.0, 0.0, TAU, 56,
+            Color(0.32, 0.76, 1.0, shield_alpha), 3.3 if player_shield_flash > 0.0 else 2.0, true)
     draw_colored_polygon(hull, Color(0.13, 0.24, 0.31))
     draw_polyline(PackedVector2Array([
         hull[0], hull[1], hull[2], hull[3], hull[4],
@@ -891,6 +913,14 @@ func draw_impacts() -> void:
         tint.a = clampf(life / 0.32, 0.0, 1.0)
         draw_arc(centre, (0.32 - life) * 58.0 + 3.0, 0.0, TAU, 16, tint, 2.0, true)
 
+func draw_debris() -> void:
+    for fragment in debris:
+        var pos: Vector2 = fragment["pos"]
+        var vel: Vector2 = fragment["vel"]
+        var color: Color = fragment["color"]
+        color.a = float(fragment["life"]) / float(fragment["max_life"])
+        draw_line(pos, pos + vel.normalized() * 9.0, color, 3.0, true)
+
 func draw_hud() -> void:
     var font := ThemeDB.fallback_font
     draw_rect(Rect2(0, 0, 1200, 103), Color(0.012, 0.022, 0.043, 0.91), true)
@@ -899,8 +929,8 @@ func draw_hud() -> void:
     draw_string(font, Vector2(25, 57), "AUTO-TRACKING BROADSIDES  •  TWO HOSTILE VESSELS  •  ONE HEAVY FLAGSHIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
     var port_status := "ON" if port_order else "OFF"
     var star_status := "ON" if starboard_order else "OFF"
-    var port_lock := targets[port_target]["name"] if port_target >= 0 else "STRAIGHT FIRE"
-    var star_lock := targets[starboard_target]["name"] if starboard_target >= 0 else "STRAIGHT FIRE"
+    var port_lock: String = String(targets[port_target]["name"]) if port_target >= 0 else "STRAIGHT FIRE"
+    var star_lock: String = String(targets[starboard_target]["name"]) if starboard_target >= 0 else "STRAIGHT FIRE"
     draw_string(font, Vector2(25, 87), "PORT  %s  [%02d]  %s" % [port_status, int(port_ammo), port_lock],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, PORT_COLOR if port_order else MUTED)
     draw_string(font, Vector2(378, 87), "STBD  %s  [%02d]  %s" % [star_status, int(starboard_ammo), star_lock],
