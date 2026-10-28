@@ -48,6 +48,7 @@ const FIRE_HEAT := Weapon.HEAT_PER_SHOT
 var invulnerable := 2.0
 var thrusting := false
 var retro_active := false
+var beam_charge_visual := 0.0
 
 func configure(new_hull: String, new_engine: String, test_multiplier: float = 1.0) -> void:
 	profile_name = new_hull if HULL_PROFILES.has(new_hull) else "Medium"
@@ -122,6 +123,10 @@ func _draw() -> void:
 		Vector2(0, -15), Vector2(10, 10), Vector2(0, 6),
 		Vector2(-10, 10), Vector2(0, -15)
 	]), Color(0.3, 1.0, 0.95), 2.5, true)
+	if beam_charge_visual > 0.0:
+		var glow: float = clampf(beam_charge_visual, 0.0, 1.0)
+		draw_circle(Vector2(0, -16), 3.0 + glow * 8.0, Color(0.25, 0.78, 1.0, 0.12 + glow * 0.28), true)
+		draw_arc(Vector2(0, -16), 5.0 + glow * 9.0, -PI * 0.5, -PI * 0.5 + TAU * glow, 28, Color(0.72, 0.96, 1.0, 0.8), 2.5, true)
 	if thrusting:
 		draw_polyline(PackedVector2Array([
 			Vector2(-5, 10), Vector2(0, 21 + randf() * 6), Vector2(5, 10)
