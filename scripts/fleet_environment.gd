@@ -8,14 +8,13 @@ const STAR_COUNT := 850
 var battlefield := Rect2(0.0, 0.0, 6000.0, 4200.0)
 var well_pos := Vector2(4490.0, 2310.0)
 var well_radius := 520.0
-var asteroids: Array[Dictionary] = []
 var stars := PackedVector2Array()
 
 func configure(bounds: Rect2, gravity_position: Vector2, gravity_radius: float, rocks: Array[Dictionary]) -> void:
     battlefield = bounds
     well_pos = gravity_position
     well_radius = gravity_radius
-    asteroids = rocks.duplicate(true)
+    # Rocks are now destructible/dynamic and rendered by Fleet Command.
     stars.clear()
     var rng := RandomNumberGenerator.new()
     rng.seed = 48672
@@ -39,26 +38,7 @@ func _draw() -> void:
         draw_circle(stars[i], 1.2 if i % 4 else 2.1,
             Color(brightness, brightness + 0.07, brightness + 0.15))
     draw_rect(battlefield, Color(0.24, 0.38, 0.45, 0.48), false, 7.0)
-    draw_asteroids()
     draw_gravity_well()
-
-func draw_asteroids() -> void:
-    for i in range(asteroids.size()):
-        var rock: Dictionary = asteroids[i]
-        var centre: Vector2 = rock["pos"]
-        var radius: float = rock["radius"]
-        var outline := PackedVector2Array()
-        for n in range(10):
-            var theta := TAU * float(n) / 10.0
-            var shape := 0.84 + 0.15 * sin(float(i) * 2.17 + float(n) * 3.7)
-            outline.append(centre + Vector2.from_angle(theta) * radius * shape)
-        draw_colored_polygon(outline, Color(0.095, 0.137, 0.167))
-        var closed := outline.duplicate()
-        closed.append(outline[0])
-        draw_polyline(closed, Color(0.34, 0.45, 0.51), 3.0, true)
-        draw_line(centre + Vector2(-radius * 0.38, -radius * 0.18),
-            centre + Vector2(radius * 0.18, radius * 0.21),
-            Color(0.20, 0.29, 0.34), 3.0, true)
 
 func draw_gravity_well() -> void:
     for r in [520.0, 365.0, 240.0, 125.0, 66.0]:
