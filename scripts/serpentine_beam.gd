@@ -47,7 +47,7 @@ func advance(delta: float, arena: Node2D) -> Array[Dictionary]:
 	for index in range(steps):
 		if travelled >= MAX_RANGE - 0.001:
 			break
-		var distance: float = minf(STEP_LENGTH, budget / float(steps), MAX_RANGE - travelled)
+		var distance: float = minf(STEP_LENGTH, minf(budget / float(steps), MAX_RANGE - travelled))
 		var from: Vector2 = points[points.size() - 1]
 		# Gentle phase-based curvature creates a moving caterpillar/snake
 		# silhouette without making the overall weapon homing.
