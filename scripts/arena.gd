@@ -317,6 +317,41 @@ func register_bounce(next: Vector2, radius: float, x_axis: bool, travel: float, 
 func blocked(point: Vector2, radius: float = 0.0) -> bool:
 	return blocked_static(point, radius) or asteroid_at(point, radius) != null
 
+func beam_endpoint(origin: Vector2, direction: Vector2, requested_length: float) -> Vector2:
+	# Exact segment intersections stop a hitscan beam at the FIRST wall or
+	# piece of cover. Unlike pulses and rockets, the beam never ricochets.
+	var heading: Vector2 = direction.normalized()
+	if heading.is_zero_approx():
+		return origin
+	var maximum: float = maxf(0.0, requested_length)
+	var far_end: Vector2 = origin + heading * maximum
+	var nearest: float = maximum
+	var rectangles: Array[Rect2] = [BOUNDS]
+	if not flight_test_mode:
+		rectangles.append(CORE)
+	for rect in rectangles:
+		var corners := PackedVector2Array([
+			rect.position, Vector2(rect.end.x, rect.position.y),
+			rect.end, Vector2(rect.position.x, rect.end.y)
+		])
+		for edge in range(4):
+			var contact = Geometry2D.segment_intersects_segment(
+				origin, far_end, corners[edge], corners[(edge + 1) % 4])
+			if contact != null:
+				nearest = minf(nearest, origin.distance_to(contact))
+	for rock in asteroids:
+		var radius: float = rock.radius
+		var toward: Vector2 = rock.position - origin
+		var forward: float = toward.dot(heading)
+		var perpendicular_squared: float = toward.length_squared() - forward * forward
+		if perpendicular_squared > radius * radius:
+			continue
+		var entry: float = forward - sqrt(maxf(0.0, radius * radius - perpendicular_squared))
+		if entry >= 0.0:
+			nearest = minf(nearest, entry)
+	return origin + heading * nearest
+
+
 func asteroid_body_impact(at: Vector2, velocity: Vector2, radius: float) -> Vector2:
 	var rock = asteroid_at(at, radius)
 	if rock == null:
