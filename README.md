@@ -17,6 +17,7 @@ This iteration adds a **testable sensor progression** and **destructible, mobile
 | **B** (right face) | Toggle persistent automatic **starboard** battery order |
 | **Y** (top face) | **Press once** to start a 5-second spinal-beam charge; press again to **cancel** |
 | **A** (bottom face) | Launch a four-missile **cold-launch** aft salvo |
+| **R3** (right stick click) | Cycle scanner upgrade test tiers (also **T** on keyboard) |
 | D-pad | Not assigned yet; reserved for directional shield controls |
 
 Keyboard: **W/S** forward/reverse, **A/D** turn, **Q/E** toggle port/starboard fire orders, **Space** press once to arm beam / press again to cancel, **F** launch missiles, **C** cease fire on both gun batteries, **V** show firing/targeting arcs and asteroid integrity, **T** cycle scanner test tiers, **-/=** zoom, **R** restart. The face buttons and D-pad remain unchanged.
