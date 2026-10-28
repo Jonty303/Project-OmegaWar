@@ -16,10 +16,12 @@ const BRAKE := 110.0
 const TURN_SPEED := 0.55
 const TURN_ACCEL := 0.43
 const CHARGE_SECONDS := 5.0
-const REVERSE_THRUST := 31.0
-const MAX_REVERSE_SPEED := 67.0
+const REVERSE_THRUST := 40.0
+const MAX_REVERSE_SPEED := 78.0
 const ASTEROID_SAFE_IMPACT := 20.0
-const TRAIL_INTERVAL := 0.065
+const TRAIL_INTERVAL := 0.052
+const SHIELD_REGEN_RATE := 0.35
+const SHIELD_REGEN_DELAY := 6.0
 const MISSILES_PER_SALVO := 4
 const MISSILE_COLD_TIME := 1.0
 const MISSILE_RELOAD := 5.5
@@ -438,12 +440,13 @@ func emit_ion(pos: Vector2, actual_velocity: Vector2, strength: float) -> void:
     if speed < 9.0:
         return
     var rearward := actual_velocity / speed
+    var speed_factor := clampf(speed / 140.0, 0.0, 1.0)
+    var lifetime := lerpf(0.46, 1.24, speed_factor)
     ion_trails.append({
-        "pos": pos - rearward * (22.0 * strength),
-        "vel": actual_velocity * 0.18,
-        "life": lerpf(0.28, 0.82, clampf(speed / 140.0, 0.0, 1.0)),
-        "max_life": 0.82, "speed": speed,
-        "radius": lerpf(1.5, 3.5, clampf(speed / 140.0, 0.0, 1.0)) * strength
+        "pos": pos - rearward * (25.0 * strength),
+        "vel": actual_velocity * 0.22,
+        "life": lifetime, "max_life": lifetime, "speed": speed,
+        "radius": lerpf(2.5, 5.0, speed_factor) * strength
     })
 
 func draw_ion_trails() -> void:
@@ -451,9 +454,12 @@ func draw_ion_trails() -> void:
         var ratio := clampf(float(particle["life"]) / float(particle["max_life"]), 0.0, 1.0)
         var pos: Vector2 = particle["pos"]
         var vel: Vector2 = particle["vel"]
-        draw_line(pos, pos - vel.normalized() * minf(float(particle["speed"]) * 0.16, 16.0),
-            Color(0.28, 0.67, 1.0, 0.26 * ratio), 3.0 * ratio, true)
-        draw_circle(pos, float(particle["radius"]) * ratio, Color(0.57, 0.88, 1.0, 0.46 * ratio))
+        var streak := minf(float(particle["speed"]) * 0.27, 30.0)
+        draw_line(pos, pos - vel.normalized() * streak,
+            Color(0.24, 0.65, 1.0, 0.36 * ratio), 5.2 * ratio, true)
+        draw_line(pos, pos - vel.normalized() * streak * 0.75,
+            Color(0.67, 0.93, 1.0, 0.48 * ratio), 2.2 * ratio, true)
+        draw_circle(pos, float(particle["radius"]) * ratio, Color(0.57, 0.88, 1.0, 0.54 * ratio))
 
 func announce(message: String) -> void:
     sound_message = message
@@ -858,20 +864,22 @@ func draw_missiles() -> void:
 func recharge_shields(delta: float) -> void:
     player_shield_delay = maxf(0.0, player_shield_delay - delta)
     player_shield_flash = maxf(0.0, player_shield_flash - delta)
-    if not player_destroyed and player_shield_delay <= 0.0:
-        player_shields = minf(PLAYER_MAX_SHIELDS, player_shields + 1.5 * delta)
+    # Depleted shields stay offline; they can only be brought back by
+    # a future explicit repair/restart ability, never passive regeneration.
+    if not player_destroyed and player_shields > 0.0 and player_shield_delay <= 0.0:
+        player_shields = minf(PLAYER_MAX_SHIELDS, player_shields + SHIELD_REGEN_RATE * delta)
     for enemy in targets:
         if bool(enemy["destroyed"]):
             continue
         enemy["shield_delay"] = maxf(0.0, float(enemy["shield_delay"]) - delta)
-        if float(enemy["shield_delay"]) <= 0.0:
-            enemy["shields"] = minf(float(enemy["max_shields"]), float(enemy["shields"]) + 0.9 * delta)
+        if float(enemy["shields"]) > 0.0 and float(enemy["shield_delay"]) <= 0.0:
+            enemy["shields"] = minf(float(enemy["max_shields"]), float(enemy["shields"]) + SHIELD_REGEN_RATE * delta)
         enemy["flash"] = maxf(0.0, float(enemy["flash"]) - delta)
 
 func damage_player(amount: float, at: Vector2) -> void:
     if player_destroyed:
         return
-    player_shield_delay = 4.0
+    player_shield_delay = SHIELD_REGEN_DELAY
     var absorbed := minf(player_shields, amount)
     player_shields -= absorbed
     if absorbed > 0.0:
@@ -1045,7 +1053,7 @@ func damage_shield_from_beam(index: int, amount: float, hit: Vector2) -> void:
     if bool(enemy["destroyed"]):
         return
     enemy["shields"] = maxf(0.0, float(enemy["shields"]) - amount)
-    enemy["shield_delay"] = 5.0
+    enemy["shield_delay"] = SHIELD_REGEN_DELAY
     enemy["flash"] = 0.65
     impacts.append({"pos": hit, "life": 0.32, "color": BEAM_COLOR})
     create_explosion(hit, 6)
@@ -1137,7 +1145,7 @@ func damage_target(index: int, amount: float, at: Vector2) -> void:
     var absorbed := minf(float(enemy["shields"]), amount)
     enemy["shields"] = float(enemy["shields"]) - absorbed
     enemy["hp"] = maxf(0.0, float(enemy["hp"]) - (amount - absorbed))
-    enemy["shield_delay"] = 4.0
+    enemy["shield_delay"] = SHIELD_REGEN_DELAY
     enemy["flash"] = 0.20
     impacts.append({"pos": at, "life": 0.32, "color": BEAM_COLOR if absorbed > 0.0 else PORT_COLOR})
     if float(enemy["hp"]) <= 0.0:
@@ -1219,6 +1227,9 @@ func draw_targets() -> void:
         draw_rect(Rect2(centre + Vector2(-56, 65), Vector2(112 * shield_ratio, 6)), STARBOARD_COLOR, true)
         draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112, 7)), Color(0.08, 0.13, 0.18), true)
         draw_rect(Rect2(centre + Vector2(-56, 76), Vector2(112 * hp_ratio, 7)), edge_color, true)
+        if float(target["shields"]) <= 0.0:
+            draw_string(font, centre + Vector2(-56, 98), "SHIELDS OFFLINE",
+                HORIZONTAL_ALIGNMENT_LEFT, -1, 12, PORT_COLOR)
 
 func draw_weapon_arcs() -> void:
     if not show_arcs:
@@ -1262,9 +1273,21 @@ func draw_ship() -> void:
         for x in [-17.0, 17.0]:
             draw_line(Vector2(x, 48), Vector2(x, 48 + jet), Color(0.99, 0.51, 0.20), 6.0, true)
             draw_line(Vector2(x, 48), Vector2(x, 48 + jet * 0.70), Color(1.0, 0.92, 0.65), 2.1, true)
-    if braking:
-        draw_line(Vector2(-25, -35), Vector2(-25, -46), Color(0.47, 0.79, 1.0), 3.0, true)
-        draw_line(Vector2(25, -35), Vector2(25, -46), Color(0.47, 0.79, 1.0), 3.0, true)
+    # Forward-facing blue manoeuvring jets make stern-first thrust obvious.
+    # They are deliberately visually different from the orange aft engines.
+    if braking and charge < CHARGE_SECONDS:
+        var reverse_power := Input.get_action_strength("fc_brake") * (1.0 - charge / CHARGE_SECONDS)
+        var reverse_pulse := 0.78 + 0.22 * sin(time_passed * 42.0)
+        var reverse_jet := (17.0 + 24.0 * reverse_power) * reverse_pulse
+        for x in [-24.0, 24.0]:
+            var nozzle := Vector2(x, -43)
+            draw_line(nozzle, nozzle + Vector2(0, -reverse_jet),
+                Color(0.15, 0.62, 1.0, 0.38), 12.0, true)
+            draw_line(nozzle, nozzle + Vector2(0, -reverse_jet * 0.78),
+                Color(0.43, 0.85, 1.0, 0.95), 5.5, true)
+            draw_line(nozzle, nozzle + Vector2(0, -reverse_jet * 0.52),
+                Color(0.92, 0.99, 1.0, 0.95), 2.2, true)
+            draw_circle(nozzle, 5.0, Color(0.61, 0.92, 1.0, 0.85))
 
     var hull := PackedVector2Array([
         Vector2(0, -64), Vector2(18, -53), Vector2(29, -33),
@@ -1381,12 +1404,17 @@ func draw_hud() -> void:
         HORIZONTAL_ALIGNMENT_LEFT, -1, 15, PORT_COLOR)
     draw_rect(Rect2(168, 705, 140, 10), Color(0.07, 0.11, 0.17), true)
     draw_rect(Rect2(168, 705, 140 * player_hull / PLAYER_MAX_HULL, 10), PORT_COLOR, true)
-    draw_string(font, Vector2(331, 720), "SHIELDS %02d/%02d" % [int(player_shields), int(PLAYER_MAX_SHIELDS)],
-        HORIZONTAL_ALIGNMENT_LEFT, -1, 15, STARBOARD_COLOR)
+    var shield_label := "SHIELDS OFFLINE" if player_shields <= 0.0 else (
+        "SHIELDS %02d/%02d" % [int(player_shields), int(PLAYER_MAX_SHIELDS)])
+    draw_string(font, Vector2(331, 720), shield_label,
+        HORIZONTAL_ALIGNMENT_LEFT, -1, 15, PORT_COLOR if player_shields <= 0.0 else STARBOARD_COLOR)
     draw_rect(Rect2(498, 705, 140, 10), Color(0.07, 0.11, 0.17), true)
     draw_rect(Rect2(498, 705, 140 * player_shields / PLAYER_MAX_SHIELDS, 10), STARBOARD_COLOR, true)
     draw_string(font, Vector2(667, 720), "SPEED %03d  |  ZOOM %.2f" % [roundi(velocity.length()), view_zoom],
         HORIZONTAL_ALIGNMENT_LEFT, -1, 14, MUTED)
+    if braking and not player_destroyed:
+        draw_string(font, Vector2(882, 720), "REVERSE THRUST",
+            HORIZONTAL_ALIGNMENT_LEFT, -1, 14, STARBOARD_COLOR)
     draw_string(font, Vector2(25, 754), "LEFT STICK: TURN / FORWARD / REVERSE     X: PORT     B: STBD     Y: BEAM ARM/CANCEL     A: 4 MISSILES",
         HORIZONTAL_ALIGNMENT_LEFT, -1, 15, WHITE)
     draw_string(font, Vector2(25, 782), "Keyboard: WASD steer/thrust/reverse   Q/E broadsides   Space beam arm/cancel   F missiles   C cease   V arcs   R reset",
