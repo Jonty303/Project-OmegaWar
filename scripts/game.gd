@@ -11,6 +11,8 @@ const Projectile = preload("res://scripts/projectile.gd")
 const Rocket = preload("res://scripts/rocket.gd")
 const Explosion = preload("res://scripts/explosion.gd")
 const ImpactParticles = preload("res://scripts/impact_particles.gd")
+const Upgrades = preload("res://scripts/upgrades.gd")
+const SoundBus = preload("res://scripts/sound_bus.gd")
 
 var arena := Arena.new()
 var ship: Node2D
@@ -35,6 +37,16 @@ var pause_menu_layer := CanvasLayer.new()
 var pause_menu_title := Label.new()
 var pause_resume_button := Button.new()
 var pause_reset_button := Button.new()
+var sound_bus := SoundBus.new()
+var bonus_layer := CanvasLayer.new()
+var bonus_title := Label.new()
+var bonus_buttons: Array[Button] = []
+var bonus_choices: Array[Dictionary] = []
+var bonus_active := false
+var upgrade_counts: Dictionary = {}
+const CASCADE_SHARD_RANGE := 175.0
+const CASCADE_SHARD_SPEED := 360.0
+const CASCADE_SHARD_DAMAGE := 0.40
 
 func _ready() -> void:
 	bind_key("turn_left", [KEY_A, KEY_LEFT])
@@ -70,6 +82,7 @@ func _ready() -> void:
 	bind_pad_axis("brake", JOY_AXIS_LEFT_Y, 1.0)
 	bind_pad_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
 	add_child(arena)
+	add_child(sound_bus)
 	arena.wall_bounced.connect(on_wall_bounced)
 	arena.asteroid_struck.connect(on_asteroid_struck)
 	hud.position = Vector2(40, 20)
@@ -82,6 +95,7 @@ func _ready() -> void:
 	status_hud.add_theme_font_size_override("font_size", 16)
 	add_child(status_hud)
 	setup_pause_menu()
+	setup_bonus_menu()
 	reset()
 
 func setup_pause_menu() -> void:
@@ -122,6 +136,83 @@ func setup_pause_menu() -> void:
 	pause_reset_button.focus_neighbor_top = pause_resume_button.get_path()
 	pause_reset_button.focus_neighbor_bottom = pause_resume_button.get_path()
 	pause_menu_layer.visible = false
+
+func setup_bonus_menu() -> void:
+	bonus_layer.layer = 12
+	add_child(bonus_layer)
+	var backdrop := ColorRect.new()
+	backdrop.color = Color(0.018, 0.027, 0.052, 0.95)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	bonus_layer.add_child(backdrop)
+	var centre := CenterContainer.new()
+	centre.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_child(centre)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(575, 395)
+	centre.add_child(panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 14)
+	panel.add_child(stack)
+	bonus_title.text = "WAVE CLEARED / CHOOSE ONE UPGRADE"
+	bonus_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bonus_title.add_theme_font_size_override("font_size", 22)
+	stack.add_child(bonus_title)
+	for index in range(3):
+		var option := Button.new()
+		option.custom_minimum_size = Vector2(515, 88)
+		option.focus_mode = Control.FOCUS_ALL
+		option.pressed.connect(choose_upgrade.bind(index))
+		stack.add_child(option)
+		bonus_buttons.append(option)
+	for i in range(3):
+		var before: int = (i + 2) % 3
+		var after: int = (i + 1) % 3
+		bonus_buttons[i].focus_neighbor_top = bonus_buttons[before].get_path()
+		bonus_buttons[i].focus_neighbor_bottom = bonus_buttons[after].get_path()
+	bonus_layer.visible = false
+
+func finish_wave() -> void:
+	if bonus_active or game_over or dying or wave <= 0:
+		return
+	# Fractional hull restoration preserves precise shield-first damage
+	# values. Ammunition recovers by half of the TOTAL equipped capacity.
+	ship.hull = minf(ship.max_hull, ship.hull + ship.max_hull * 0.25)
+	ship.shields = ship.max_shields
+	ship.secondary.ammo = mini(ship.secondary.MAX_AMMO, ship.secondary.ammo + ceili(ship.secondary.MAX_AMMO * 0.50))
+	ship.queue_redraw()
+	waiting_for_wave = true
+	wave_delay = 5.0
+	bonus_choices = Upgrades.offer(ship)
+	for i in range(3):
+		var choice: Dictionary = bonus_choices[i]
+		var count: int = int(upgrade_counts.get(choice["id"], 0))
+		var stack_label := "  (owned %d)" % count if count > 0 else ""
+		bonus_buttons[i].text = "%s%s\n%s" % [choice["title"], stack_label, choice["description"]]
+	bonus_title.text = "WAVE %02d COMPLETE  /  SELECT ONE UPGRADE" % wave
+	bonus_active = true
+	bonus_layer.visible = true
+	bonus_buttons[0].grab_focus()
+	update_hud()
+
+func choose_upgrade(index: int) -> void:
+	if not bonus_active or index < 0 or index >= bonus_choices.size():
+		return
+	var upgrade_id: String = bonus_choices[index]["id"]
+	if not Upgrades.apply(ship, upgrade_id):
+		return
+	upgrade_counts[upgrade_id] = int(upgrade_counts.get(upgrade_id, 0)) + 1
+	bonus_active = false
+	bonus_layer.visible = false
+	bonus_choices.clear()
+	# The existing 5s intermission starts AFTER the choice, not while
+	# the player is reading the upgrade cards.
+	waiting_for_wave = true
+	wave_delay = 5.0
+	update_hud()
+
+func menu_choice_buttons() -> Array[Button]:
+	return bonus_buttons if bonus_active else [pause_resume_button, pause_reset_button]
 
 func set_paused(value: bool) -> void:
 	paused = value
@@ -186,6 +277,10 @@ func reset() -> void:
 	wave_delay = 1.0
 	waiting_for_wave = true
 	paused = false
+	bonus_active = false
+	bonus_layer.visible = false
+	bonus_choices.clear()
+	upgrade_counts.clear()
 	game_over = false
 	dying = false
 	death_timer = 0.0
@@ -193,12 +288,27 @@ func reset() -> void:
 	update_hud()
 
 func _input(event: InputEvent) -> void:
-	if not paused:
+	if not paused and not bonus_active:
 		return
 	if event is InputEventKey and event.is_echo():
 		return
-	# Handle menu navigation at the input stage, before the underlying
-	# ship/GUI shortcuts. Focused mouse buttons still use pressed signals.
+	if bonus_active:
+		var focused := 0
+		for i in range(bonus_buttons.size()):
+			if bonus_buttons[i].has_focus():
+				focused = i
+				break
+		if event.is_action_pressed("ui_down"):
+			bonus_buttons[(focused + 1) % 3].grab_focus()
+		elif event.is_action_pressed("ui_up"):
+			bonus_buttons[(focused + 2) % 3].grab_focus()
+		elif event.is_action_pressed("ui_accept"):
+			choose_upgrade(focused)
+		else:
+			return
+		get_viewport().set_input_as_handled()
+		return
+	# Pause panel retains the existing controller confirm handling.
 	if event.is_action_pressed("ui_down"):
 		pause_reset_button.grab_focus()
 		get_viewport().set_input_as_handled()
@@ -215,6 +325,8 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_echo():
 		return
+	if bonus_active:
+		return
 	if event.is_action_pressed("pause_game"):
 		# The pause overlay owns Reset. After death it remains open until
 		# the user explicitly chooses Reset Run.
@@ -223,8 +335,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
-	if paused or game_over:
+	if paused or game_over or bonus_active:
 		return
+	sound_bus.advance(delta)
 	arena.advance_flashes(delta)
 	step_effects(delta)
 	arena.set_drone_bodies(enemies)
@@ -266,16 +379,19 @@ func _physics_process(delta: float) -> void:
 	self_destruct_orphaned_repair_bots()
 	# Weapon knockback and ramming can add impulses after ship.step.
 	ship.enforce_speed_limit()
-	if enemies.is_empty():
+	if ship.hull <= 0:
+		begin_player_death()
+	elif enemies.is_empty():
 		if not waiting_for_wave:
-			waiting_for_wave = true
-			wave_delay = 5.0
+			finish_wave()
+		elif wave == 0:
+			wave_delay -= delta
+			if wave_delay <= 0.0:
+				start_wave()
 		else:
 			wave_delay -= delta
 			if wave_delay <= 0.0:
 				start_wave()
-	if ship.hull <= 0:
-		begin_player_death()
 	update_hud()
 
 func begin_player_death() -> void:
@@ -742,7 +858,7 @@ func update_hud() -> void:
 		ship.shields, ship.max_shields, ship.heat / ship.MAX_HEAT * 100.0,
 		ship.secondary.ammo, ship.secondary.MAX_AMMO, ship.secondary.cooldown
 	]
-	if dying or paused or game_over:
+	if dying or paused or game_over or bonus_active:
 		banner.text = ""
 	elif waiting_for_wave and wave > 0:
 		banner.text = "ARENA CLEAR / NEXT WAVE IN %.1f" % maxf(0.0, wave_delay)
