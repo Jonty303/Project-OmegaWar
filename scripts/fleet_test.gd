@@ -413,6 +413,179 @@ func fire_broadside(side: float, selected: int = -1) -> void:
         })
     sound_bus.play("pulse")
 
+func advance_enemies(delta: float) -> void:
+    for j in range(targets.size()):
+        var enemy: Dictionary = targets[j]
+        if bool(enemy["destroyed"]):
+            continue
+        var centre: Vector2 = enemy["pos"]
+        var to_flagship := ship_pos - centre
+        var distance := to_flagship.length()
+        if distance < 1.0:
+            to_flagship = Vector2.UP
+            distance = 1.0
+        var bearing := to_flagship.angle()
+        var is_cruiser: bool = enemy["kind"] == "cruiser"
+        var preferred := 580.0 if is_cruiser else 390.0
+        var heading := bearing + PI * 0.5
+        var moving_forward := false
+
+        if distance > preferred + 110.0:
+            heading = bearing + PI * 0.5  # nose faces player (UP local axis)
+            moving_forward = true
+        elif distance < preferred - 130.0:
+            heading = bearing - PI * 0.5  # nose faces away
+            moving_forward = true
+        elif is_cruiser:
+            # Make port guns face player; drift along the firing line.
+            heading = bearing - PI
+        else:
+            # A frigate keeps bringing its forward battery around.
+            heading = bearing + PI * 0.5 + sin(time_passed * 0.49 + float(j)) * 0.22
+            moving_forward = true
+
+        # Avoid solid rocks and the anomaly with intentional steering.
+        for rock in asteroids:
+            var separation: Vector2 = centre - Vector2(rock["pos"])
+            if separation.length() < float(rock["radius"]) + 170.0:
+                heading = separation.angle() + PI * 0.5
+                moving_forward = true
+                break
+        var well_delta: Vector2 = centre - GRAVITY_CENTER
+        if well_delta.length() < GRAVITY_RADIUS * 0.62:
+            heading = well_delta.angle() + PI * 0.5
+            moving_forward = true
+
+        var turn_rate: float = enemy["turn_rate"]
+        var target_rotation := wrapf(heading - float(enemy["angle"]), -PI, PI)
+        var desired_turn := clampf(target_rotation * 1.15, -turn_rate, turn_rate)
+        var turn_velocity: float = move_toward(float(enemy["turn_velocity"]), desired_turn, turn_rate * 0.95 * delta)
+        enemy["turn_velocity"] = turn_velocity
+        enemy["angle"] = float(enemy["angle"]) + turn_velocity * delta
+
+        var vel: Vector2 = enemy["velocity"]
+        var heading_error := absf(wrapf(heading - float(enemy["angle"]), -PI, PI))
+        if heading_error < 1.0:
+            var impulse: float = 1.0 if moving_forward else 0.43
+            vel += Vector2.UP.rotated(float(enemy["angle"])) * float(enemy["accel"]) * impulse * delta
+        if not moving_forward:
+            vel = vel.move_toward(Vector2.ZERO, 15.0 * delta)
+        vel += gravity_at(centre) * delta
+        vel = vel.limit_length(float(enemy["speed"]))
+        var future := centre + vel * delta
+        if not FIELD.grow(-65.0).has_point(future):
+            vel = -vel * 0.25
+            future = centre + vel * delta
+        for rock in asteroids:
+            var from_rock := future - Vector2(rock["pos"])
+            var safe_radius := float(rock["radius"]) + float(enemy["radius"])
+            if from_rock.length_squared() < safe_radius * safe_radius:
+                var outward := from_rock.normalized() if from_rock.length() > 0.1 else Vector2.RIGHT
+                future = Vector2(rock["pos"]) + outward * safe_radius
+                vel = vel.slide(outward) * 0.65
+        # Ships are solid to one another and cannot overlap the flagship.
+        var from_player := future - ship_pos
+        var min_player := float(enemy["radius"]) + SHIP_RADIUS
+        if from_player.length_squared() < min_player * min_player:
+            var out := from_player.normalized() if from_player.length() > 0.1 else Vector2.RIGHT
+            future = ship_pos + out * min_player
+            vel = vel.slide(out) * 0.65
+        enemy["pos"] = future
+        enemy["velocity"] = vel
+        enemy["reload"] = maxf(0.0, float(enemy["reload"]) - delta)
+        if float(enemy["reload"]) <= 0.0:
+            fire_enemy(j)
+        targets[j] = enemy
+
+func fire_enemy(j: int) -> void:
+    if player_destroyed:
+        return
+    var enemy: Dictionary = targets[j]
+    var centre: Vector2 = enemy["pos"]
+    var diff := ship_pos - centre
+    var distance := diff.length()
+    var ship_heading: float = enemy["angle"]
+    var is_cruiser: bool = enemy["kind"] == "cruiser"
+    var aim := diff.normalized()
+    if is_cruiser:
+        var left := Vector2.LEFT.rotated(ship_heading)
+        var right := Vector2.RIGHT.rotated(ship_heading)
+        var side := -1.0 if left.dot(aim) > right.dot(aim) else 1.0
+        var outward := Vector2(side, 0).rotated(ship_heading)
+        if not arc_valid(centre, outward, ship_pos, BATTERY_HALF_ARC, float(enemy["range"])):
+            return
+        if not line_clear(centre, ship_pos):
+            return
+        var lead := (ship_pos + velocity * (distance / SHELL_SPEED) - centre).normalized()
+        var error_angle := wrapf(lead.angle() - outward.angle(), -PI, PI)
+        aim = outward.rotated(clampf(error_angle, -BATTERY_HALF_ARC, BATTERY_HALF_ARC))
+        for station in [-18.0, 18.0]:
+            var muzzle := centre + Vector2(side * 39.0, station).rotated(ship_heading)
+            spawn_enemy_shell(muzzle, aim, float(enemy["damage"]), 0.03)
+    else:
+        var nose := Vector2.UP.rotated(ship_heading)
+        if not arc_valid(centre, nose, ship_pos, deg_to_rad(30.0), float(enemy["range"])):
+            return
+        if not line_clear(centre, ship_pos):
+            return
+        var lead := (ship_pos + velocity * (distance / (SHELL_SPEED + 100.0)) - centre).normalized()
+        var offset := wrapf(lead.angle() - nose.angle(), -PI, PI)
+        aim = nose.rotated(clampf(offset, -deg_to_rad(30.0), deg_to_rad(30.0)))
+        spawn_enemy_shell(centre + nose * 31.0, aim, float(enemy["damage"]), 0.02)
+    enemy["reload"] = float(enemy["reload_time"])
+    sound_bus.play("pulse")
+
+func spawn_enemy_shell(origin: Vector2, aim: Vector2, damage: float, dispersion: float) -> void:
+    shots.append({
+        "pos": origin, "previous": origin,
+        "vel": aim.rotated(randf_range(-dispersion, dispersion)) * (SHELL_SPEED + 70.0),
+        "life": 2.2, "side": 0.0, "hostile": true, "damage": damage
+    })
+
+func recharge_shields(delta: float) -> void:
+    player_shield_delay = maxf(0.0, player_shield_delay - delta)
+    if not player_destroyed and player_shield_delay <= 0.0:
+        player_shields = minf(PLAYER_MAX_SHIELDS, player_shields + 1.5 * delta)
+    for enemy in targets:
+        if bool(enemy["destroyed"]):
+            continue
+        enemy["shield_delay"] = maxf(0.0, float(enemy["shield_delay"]) - delta)
+        if float(enemy["shield_delay"]) <= 0.0:
+            enemy["shields"] = minf(float(enemy["max_shields"]), float(enemy["shields"]) + 0.9 * delta)
+        enemy["flash"] = maxf(0.0, float(enemy["flash"]) - delta)
+
+func damage_player(amount: float, at: Vector2) -> void:
+    if player_destroyed:
+        return
+    player_shield_delay = 4.0
+    var absorbed := minf(player_shields, amount)
+    player_shields -= absorbed
+    player_hull = maxf(0.0, player_hull - (amount - absorbed))
+    impacts.append({"pos": at, "life": 0.32, "color": STARBOARD_COLOR if absorbed > 0.0 else PORT_COLOR})
+    if player_hull <= 0.0:
+        player_destroyed = true
+        encounter_finished = true
+        announce("FLAGSHIP LOST - PRESS R TO RETRY")
+        create_explosion(ship_pos, 18)
+        sound_bus.play("explosion")
+
+func create_explosion(at: Vector2, count: int) -> void:
+    for n in range(count):
+        var a := TAU * float(n) / float(count)
+        var offset := Vector2.from_angle(a) * float((n % 4) + 1) * 9.0
+        impacts.append({"pos": at + offset, "life": 0.32, "color": PORT_COLOR})
+
+func check_encounter_result() -> void:
+    if encounter_finished:
+        return
+    var alive := 0
+    for enemy in targets:
+        if not bool(enemy["destroyed"]):
+            alive += 1
+    if alive == 0:
+        encounter_finished = true
+        announce("BATTLE WON - PRESS R TO RESTART")
+
 func advance_shots(delta: float) -> void:
     for i in range(shots.size() - 1, -1, -1):
         var bullet: Dictionary = shots[i]
@@ -432,15 +605,22 @@ func advance_shots(delta: float) -> void:
                     expired = true
                     break
         if not expired:
-            for j in range(targets.size()):
-                if float(targets[j]["hp"]) <= 0.0:
-                    continue
-                var target_pos: Vector2 = targets[j]["pos"]
-                var near: Vector2 = Geometry2D.get_closest_point_to_segment(target_pos, old, next)
-                if near.distance_squared_to(target_pos) <= 50.0 * 50.0:
-                    damage_target(j, 1.0, near)
-                    expired = true
-                    break
+            if bool(bullet["hostile"]):
+                if not player_destroyed:
+                    var near_ship := Geometry2D.get_closest_point_to_segment(ship_pos, old, next)
+                    if near_ship.distance_squared_to(ship_pos) <= SHIP_RADIUS * SHIP_RADIUS:
+                        damage_player(float(bullet["damage"]), near_ship)
+                        expired = true
+            else:
+                for j in range(targets.size()):
+                    if bool(targets[j]["destroyed"]):
+                        continue
+                    var target_pos: Vector2 = targets[j]["pos"]
+                    var near: Vector2 = Geometry2D.get_closest_point_to_segment(target_pos, old, next)
+                    if near.distance_squared_to(target_pos) <= pow(float(targets[j]["radius"]), 2.0):
+                        damage_target(j, float(bullet["damage"]), near)
+                        expired = true
+                        break
         if expired:
             shots.remove_at(i)
         else:
@@ -517,21 +697,20 @@ func advance_beam(delta: float) -> void:
         if beam_linger <= 0.0:
             beam_path.clear()
 
-func damage_target(index: int, damage: float, at: Vector2) -> void:
-    targets[index]["hp"] = maxf(0.0, float(targets[index]["hp"]) - damage)
-    targets[index]["flash"] = 0.20
-    impacts.append({"pos": at, "life": 0.32, "color": BEAM_COLOR if damage > 1.5 else PORT_COLOR})
-    if float(targets[index]["hp"]) <= 0.0:
-        targets[index]["respawn"] = 3.0
+func damage_target(index: int, amount: float, at: Vector2) -> void:
+    if bool(targets[index]["destroyed"]):
+        return
+    var enemy: Dictionary = targets[index]
+    var absorbed := minf(float(enemy["shields"]), amount)
+    enemy["shields"] = float(enemy["shields"]) - absorbed
+    enemy["hp"] = maxf(0.0, float(enemy["hp"]) - (amount - absorbed))
+    enemy["shield_delay"] = 4.0
+    enemy["flash"] = 0.20
+    impacts.append({"pos": at, "life": 0.32, "color": BEAM_COLOR if absorbed > 0.0 else PORT_COLOR})
+    if float(enemy["hp"]) <= 0.0:
+        enemy["destroyed"] = true
+        create_explosion(enemy["pos"], 14)
         sound_bus.play("explosion")
-
-func advance_targets(delta: float) -> void:
-    for target in targets:
-        target["flash"] = maxf(0.0, float(target["flash"]) - delta)
-        if float(target["hp"]) <= 0.0:
-            target["respawn"] = maxf(0.0, float(target["respawn"]) - delta)
-            if float(target["respawn"]) <= 0.0:
-                target["hp"] = target["max_hp"]
 
 func update_environment_transform() -> void:
     # Moving/scaling a CanvasItem does not rebuild its cached draw commands.
