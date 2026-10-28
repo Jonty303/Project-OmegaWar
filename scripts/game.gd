@@ -15,6 +15,8 @@ const Upgrades = preload("res://scripts/upgrades.gd")
 const SoundBus = preload("res://scripts/sound_bus.gd")
 const ChargeBeam = preload("res://scripts/charge_beam.gd")
 const BeamEffect = preload("res://scripts/beam_effect.gd")
+const SerpentineCharge = preload("res://scripts/serpentine_charge.gd")
+const SerpentineBeam = preload("res://scripts/serpentine_beam.gd")
 
 var arena := Arena.new()
 var ship: Node2D
@@ -23,6 +25,7 @@ var shots: Array[Node2D] = []
 var rockets: Array[Node2D] = []
 var homing_missiles: Array[Node2D] = []
 var effects: Array[Node2D] = []
+var serpentine_beams: Array[Node2D] = []
 var score := 0
 var wave := 0
 var wave_delay := 1.0
@@ -55,13 +58,17 @@ var last_difficulty := "NONE"
 # and its comprehensive smoke checks continue to use their old behaviour.
 var flight_test_mode := false
 const TEST_HULLS := ["Light", "Medium", "Heavy"]
-const TEST_WEAPONS := ["Pulse Laser", "Charge Beam"]
+const TEST_WEAPONS := ["Pulse Laser", "Lightning Gun"]
+const TEST_SECONDARIES := ["Rockets", "Beam Cannon"]
 var test_hull_index := 1
 var test_weapon_index := 0
+var test_secondary_index := 0
 var charge_beam := ChargeBeam.new()
+var serpentine_charge := SerpentineCharge.new()
 var test_controls_layer := CanvasLayer.new()
 var test_hull_picker := OptionButton.new()
 var test_weapon_picker := OptionButton.new()
+var test_secondary_picker := OptionButton.new()
 const DIFFICULTY_PROJECTILE_FACTOR := 1.05
 const DIFFICULTY_HEALTH_STEP := 0.5
 
@@ -228,7 +235,7 @@ func setup_flight_test_controls() -> void:
 	add_child(test_controls_layer)
 	var panel := PanelContainer.new()
 	panel.position = Vector2(899, 63)
-	panel.custom_minimum_size = Vector2(276, 155)
+	panel.custom_minimum_size = Vector2(276, 195)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.02, 0.05, 0.09, 0.92)
 	style.border_color = Color(0.20, 0.65, 0.80, 0.8)
@@ -256,8 +263,15 @@ func setup_flight_test_controls() -> void:
 		test_weapon_picker.add_item(weapon_name)
 	test_weapon_picker.select(test_weapon_index)
 	column.add_child(test_weapon_picker)
+	var secondary_label := Label.new()
+	secondary_label.text = "Secondary weapon"
+	column.add_child(secondary_label)
+	for secondary_name in TEST_SECONDARIES:
+		test_secondary_picker.add_item(secondary_name)
+	test_secondary_picker.select(test_secondary_index)
+	column.add_child(test_secondary_picker)
 	var tip := Label.new()
-	tip.text = "CHARGE BEAM: HOLD FIRE, RELEASE TO SHOOT"
+	tip.text = "LIGHTNING: HOLD SPACE / RELEASE\nBEAM: HOLD Q UNTIL STOPPED / RELEASE"
 	tip.add_theme_font_size_override("font_size", 11)
 	column.add_child(tip)
 	var reset_motion := Button.new()
@@ -266,6 +280,7 @@ func setup_flight_test_controls() -> void:
 	column.add_child(reset_motion)
 	test_hull_picker.item_selected.connect(change_test_hull)
 	test_weapon_picker.item_selected.connect(change_test_weapon)
+	test_secondary_picker.item_selected.connect(change_test_secondary)
 
 func change_test_hull(index: int) -> void:
 	test_hull_index = index
@@ -277,6 +292,17 @@ func change_test_weapon(index: int) -> void:
 	test_weapon_index = index
 	charge_beam.reset()
 	if is_instance_valid(ship):
+		ship.beam_charge_visual = 0.0
+		ship.queue_redraw()
+	update_hud()
+
+func change_test_secondary(index: int) -> void:
+	if index < 0 or index >= TEST_SECONDARIES.size():
+		return
+	test_secondary_index = index
+	serpentine_charge.reset()
+	if is_instance_valid(ship):
+		ship.heavy_charge_fraction = -1.0
 		ship.beam_charge_visual = 0.0
 		ship.queue_redraw()
 	update_hud()
@@ -295,6 +321,8 @@ func reset_flight_test_motion() -> void:
 	ship.rotation = 0.0
 	ship.invulnerable = 2.0
 	charge_beam.reset()
+	serpentine_charge.reset()
+	ship.heavy_charge_fraction = -1.0
 	ship.beam_charge_visual = 0.0
 	ship.queue_redraw()
 	update_hud()
@@ -390,13 +418,15 @@ func bind_pad_axis(action: String, axis: int, value: float) -> void:
 
 func reset() -> void:
 	charge_beam.reset()
-	for entity in enemies + shots + rockets + homing_missiles + effects:
+	serpentine_charge.reset()
+	for entity in enemies + shots + rockets + homing_missiles + effects + serpentine_beams:
 		entity.free()
 	enemies.clear()
 	shots.clear()
 	rockets.clear()
 	homing_missiles.clear()
 	effects.clear()
+	serpentine_beams.clear()
 	arena.reset_flashes()
 	arena.reset_asteroids()
 	arena.set_drone_bodies(enemies)
@@ -493,21 +523,28 @@ func _physics_process(delta: float) -> void:
 		update_hud()
 		return
 	arena.pull_body(ship, delta)
+	var beam_held: bool = flight_test_mode and test_secondary_index == 1 and Input.is_action_pressed("fire_secondary")
+	var drawing_power: bool = flight_test_mode and test_secondary_index == 1 and (serpentine_charge.charging or (beam_held and serpentine_charge.cooldown <= 0.0))
+	ship.heavy_charge_fraction = minf(1.0, serpentine_charge.fraction() + delta / SerpentineCharge.CHARGE_DURATION) if drawing_power else -1.0
 	ship.step(delta, arena)
-	if flight_test_mode and test_weapon_index == 1:
-		var release: Dictionary = charge_beam.advance(delta, Input.is_action_pressed("fire"))
-		ship.beam_charge_visual = charge_beam.charge_fraction() if charge_beam.charging else 0.0
-		ship.queue_redraw()
-		if not release.is_empty():
-			fire_charged_beam(release)
-	elif Input.is_action_pressed("fire"):
-		var volley: Array[Dictionary] = ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation))
-		if not volley.is_empty():
-			ship.fired_primary()
-			sound_bus.play("pulse")
-		for shot in volley:
-			spawn_shot(shot.position, shot.velocity, false, shot.damage, shot.max_range, shot.radius)
-	if Input.is_action_just_pressed("fire_secondary"):
+	if flight_test_mode and test_secondary_index == 1:
+		if serpentine_charge.advance(delta, beam_held, ship.velocity.length()):
+			fire_serpentine_beam()
+	if not drawing_power:
+		if flight_test_mode and test_weapon_index == 1:
+			var release: Dictionary = charge_beam.advance(delta, Input.is_action_pressed("fire"))
+			if not release.is_empty():
+				fire_charged_beam(release)
+		elif Input.is_action_pressed("fire"):
+			var volley: Array[Dictionary] = ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation))
+			if not volley.is_empty():
+				ship.fired_primary()
+				sound_bus.play("pulse")
+			for shot in volley:
+				spawn_shot(shot.position, shot.velocity, false, shot.damage, shot.max_range, shot.radius)
+	ship.beam_charge_visual = serpentine_charge.fraction() if drawing_power else (charge_beam.charge_fraction() if flight_test_mode and test_weapon_index == 1 and charge_beam.charging else 0.0)
+	ship.queue_redraw()
+	if (not flight_test_mode or test_secondary_index == 0) and Input.is_action_just_pressed("fire_secondary"):
 		fire_player_rocket()
 	for enemy in enemies:
 		arena.pull_body(enemy, delta)
@@ -527,6 +564,7 @@ func _physics_process(delta: float) -> void:
 	step_shots(delta)
 	step_rockets(delta)
 	step_homing_missiles(delta)
+	step_serpentine_beams(delta)
 	self_destruct_orphaned_repair_bots()
 	# Weapon knockback and ramming can add impulses after ship.step.
 	ship.enforce_speed_limit()
@@ -806,6 +844,7 @@ func step_homing_missiles(delta: float) -> void:
 			missile.queue_redraw()
 
 func fire_charged_beam(spec: Dictionary) -> void:
+	# Lightning Gun: a single instantaneous, non-bouncing flash on release.
 	# Apply damage once, along a zero-travel-time ray. Its world-space
 	# endpoint is clipped to the first wall or asteroid before hit tests.
 	if not flight_test_mode or not is_instance_valid(ship):
@@ -840,6 +879,51 @@ func fire_charged_beam(spec: Dictionary) -> void:
 		spawn_debris(closest, Color(0.62, 0.91, 1.0), 0.72, 6, 0.26)
 		if destroyed:
 			defeat_enemy(index)
+
+
+func fire_serpentine_beam() -> void:
+	# Beam Cannon: the charging ship must have come to a halt. The released
+	# filament travels and grows over time, reflects, then fades after range.
+	if not flight_test_mode or test_secondary_index != 1 or not is_instance_valid(ship):
+		return
+	var heading: Vector2 = Vector2.UP.rotated(ship.rotation)
+	var muzzle: Vector2 = ship.position + heading * (ship.collision_radius + 4.0)
+	if arena.blocked(muzzle, 1.0):
+		return
+	var filament := SerpentineBeam.new()
+	filament.configure(muzzle, heading)
+	serpentine_beams.append(filament)
+	add_child(filament)
+	ship.heat = minf(ship.MAX_HEAT, ship.heat + 55.0)
+	sound_bus.play("beam")
+
+func step_serpentine_beams(delta: float) -> void:
+	for i in range(serpentine_beams.size() - 1, -1, -1):
+		var filament = serpentine_beams[i]
+		var segments: Array[Dictionary] = filament.advance(delta, arena)
+		for segment in segments:
+			var from: Vector2 = segment["from"]
+			var to: Vector2 = segment["to"]
+			for j in range(enemies.size() - 1, -1, -1):
+				var enemy = enemies[j]
+				var id: int = enemy.get_instance_id()
+				if filament.hit_targets.has(id):
+					continue # A beam only damages an enemy once, not each frame.
+				var closest: Vector2 = Geometry2D.get_closest_point_to_segment(enemy.position, from, to)
+				var reach: float = enemy.COLLISION_RADIUS + filament.WIDTH * 0.5
+				if enemy.position.distance_squared_to(closest) > reach * reach:
+					continue
+				filament.hit_targets[id] = true
+				var direction: Vector2 = (to - from).normalized()
+				enemy.velocity += direction * 65.0
+				var destroyed: bool = enemy.take_damage(filament.DAMAGE)
+				notify_drones_of_hit(enemy, direction)
+				spawn_debris(closest, Color(0.5, 0.88, 1.0), 0.95, 8, 0.28)
+				if destroyed:
+					defeat_enemy(j)
+		if filament.expired():
+			serpentine_beams.remove_at(i)
+			filament.queue_free()
 
 
 func fire_player_rocket() -> void:
@@ -1098,17 +1182,21 @@ func update_hud() -> void:
 		hud.text = "OMEGAWAR / FLIGHT LAB     TEST %02d     HOSTILES %02d     NO OBSTACLES" % [wave, enemies.size()]
 		var weapon_display := "PULSE LASER: HOLD TO FIRE"
 		if test_weapon_index == 1:
-			var beam_stats: Dictionary = ChargeBeam.spec_for(charge_beam.charge_time)
-			weapon_display = "BEAM %3.0f%%  RANGE %3.0f  DMG %.2f  RECHARGE %.1fs" % [
-				charge_beam.charge_fraction() * 100.0, float(beam_stats["length"]),
-				float(beam_stats["damage"]), charge_beam.cooldown
+			var lightning_stats: Dictionary = ChargeBeam.spec_for(charge_beam.charge_time)
+			weapon_display = "LIGHTNING %3.0f%%  RANGE %3.0f  DMG %.2f" % [
+				charge_beam.charge_fraction() * 100.0, float(lightning_stats["length"]), float(lightning_stats["damage"])
 			]
-		status_hud.text = "%s   SPEED %4.0f/%4.0f   HULL %.1f/%.0f   HEAT %3.0f%%   ROCKETS %d/%d\n%s   ACCEL %3.0f   BRAKE %3.0f   TURN %.2f   MASS %.2f" % [
+		var secondary_display := "ROCKETS %d/%d" % [ship.secondary.ammo, ship.secondary.MAX_AMMO]
+		if test_secondary_index == 1:
+			secondary_display = "BEAM CANNON %3.0f%%  %s  CD %.1fs" % [
+				serpentine_charge.fraction() * 100.0,
+				"READY / RELEASE" if serpentine_charge.ready(ship.velocity.length()) else "HOLD Q TO STOP",
+				serpentine_charge.cooldown
+			]
+		status_hud.text = "%s  SPEED %4.0f/%4.0f  HULL %.1f/%.0f  HEAT %3.0f%%\n%s  |  %s  |  MASS %.2f" % [
 			ship.profile_name.to_upper(), ship.velocity.length(), ship.speed_limit,
 			ship.hull, ship.max_hull, ship.heat / ship.MAX_HEAT * 100.0,
-			ship.secondary.ammo, ship.secondary.MAX_AMMO, weapon_display,
-			ship.acceleration * ship.thrust_multiplier, ship.braking,
-			ship.rotation_speed, ship.mass
+			weapon_display, secondary_display, ship.mass
 		]
 	if dying or paused or game_over or bonus_active:
 		banner.text = ""
