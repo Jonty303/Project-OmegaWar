@@ -3,7 +3,7 @@ config_version=5
 
 [application]
 config/name="OmegaWar"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/flight_test.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 
 [display]
