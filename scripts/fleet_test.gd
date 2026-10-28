@@ -230,6 +230,172 @@ func add_asteroid(pos: Vector2, radius: float, tier: int, vel: Vector2, born: fl
     })
     next_rock_id += 1
 
+func damage_asteroid(index: int, amount: float, hit: Vector2, force: Vector2, source: String = "bullet") -> void:
+    if index < 0 or index >= asteroids.size():
+        return
+    var rock: Dictionary = asteroids[index]
+    rock["hp"] = float(rock["hp"]) - amount
+    rock["flash"] = 0.24
+    impacts.append({"pos": hit, "life": 0.32, "color": PORT_COLOR if source == "beam" else MUTED})
+    if float(rock["hp"]) > 0.0:
+        # Shells steadily chip the rock; no fragmentation before integrity breaks.
+        if source != "beam":
+            spawn_rock_chips(hit, 2)
+        asteroids[index] = rock
+        return
+    asteroids.remove_at(index)
+    asteroids_destroyed += 1
+    create_explosion(hit, 9 if source == "beam" else 6)
+    if source == "beam":
+        sound_bus.play("explosion")
+    var tier: int = rock["tier"]
+    var centre: Vector2 = rock["pos"]
+    var parent_velocity: Vector2 = rock["velocity"]
+    if tier > ROCK_TIER_SMALL:
+        # Child asteroids are independently simulated, and further breakable.
+        var children := 3 if tier == ROCK_TIER_LARGE else 4
+        var new_radius := float(rock["radius"]) * (0.54 if tier == ROCK_TIER_LARGE else 0.43)
+        for n in range(children):
+            if asteroids.size() >= MAX_ACTIVE_ASTEROIDS:
+                break
+            var angle := TAU * (float(n) + randf_range(-0.10, 0.10)) / float(children)
+            var outward := Vector2.from_angle(angle)
+            var speed := randf_range(45.0, 96.0) + (25.0 if source == "beam" else 0.0)
+            var child_vel := parent_velocity * 0.70 + outward * speed + force.limit_length(80.0) * 0.20
+            var child_pos := centre + outward * (float(rock["radius"]) * 0.30)
+            add_asteroid(child_pos, new_radius, tier - 1, child_vel, time_passed)
+    else:
+        spawn_final_fragments(centre, parent_velocity, force)
+
+func spawn_rock_chips(at: Vector2, count: int) -> void:
+    for n in range(count):
+        var spread := Vector2.from_angle(randf_range(-PI, PI))
+        var duration := randf_range(0.24, 0.54)
+        debris.append({
+            "pos": at, "vel": spread * randf_range(45.0, 100.0),
+            "life": duration, "max_life": duration, "color": MUTED
+        })
+
+func spawn_final_fragments(centre: Vector2, inherited: Vector2, force: Vector2) -> void:
+    # Terminal breakup uses short-lived kinetic projectiles, not further
+    # asteroid nodes. Total count is capped to protect swarm performance.
+    for n in range(7):
+        if kinetic_fragments.size() >= MAX_KINETIC_FRAGMENTS:
+            break
+        var outward := Vector2.from_angle(TAU * (float(n) + randf_range(-0.16, 0.16)) / 7.0)
+        var spd := randf_range(135.0, 230.0)
+        kinetic_fragments.append({
+            "pos": centre, "vel": inherited * 0.7 + outward * spd + force.limit_length(120.0) * 0.35,
+            "life": randf_range(1.3, 2.6), "radius": randf_range(3.5, 7.0),
+            "damage": randf_range(0.7, 1.7)
+        })
+
+func advance_asteroids(delta: float) -> void:
+    for rock in asteroids:
+        rock["flash"] = maxf(0.0, float(rock["flash"]) - delta)
+        var v: Vector2 = rock["velocity"]
+        if v.length_squared() <= 0.01:
+            continue
+        var pos: Vector2 = rock["pos"]
+        v += gravity_at(pos) * delta * 0.18
+        v = v.limit_length(190.0)
+        var next := pos + v * delta
+        var radius: float = rock["radius"]
+        if next.x - radius < FIELD.position.x or next.x + radius > FIELD.end.x:
+            v.x = -v.x * 0.62
+        if next.y - radius < FIELD.position.y or next.y + radius > FIELD.end.y:
+            v.y = -v.y * 0.62
+        pos += v * delta
+        pos.x = clampf(pos.x, FIELD.position.x + radius, FIELD.end.x - radius)
+        pos.y = clampf(pos.y, FIELD.position.y + radius, FIELD.end.y - radius)
+        rock["pos"] = pos
+        rock["velocity"] = v * (1.0 - 0.009 * delta)
+        rock["angle"] = float(rock["angle"]) + float(rock["spin"]) * delta
+
+func damage_target_hull_direct(index: int, amount: float, hit: Vector2) -> void:
+    if index < 0 or index >= targets.size() or bool(targets[index]["destroyed"]):
+        return
+    var enemy: Dictionary = targets[index]
+    enemy["hp"] = maxf(0.0, float(enemy["hp"]) - amount)
+    enemy["flash"] = 0.28
+    spawn_hull_debris(hit, enemy["pos"], enemy["velocity"], amount)
+    impacts.append({"pos": hit, "life": 0.32, "color": PORT_COLOR})
+    if float(enemy["hp"]) <= 0.0:
+        enemy["destroyed"] = true
+        create_explosion(enemy["pos"], 16)
+        sound_bus.play("explosion")
+    targets[index] = enemy
+
+func advance_fragments(delta: float) -> void:
+    for i in range(kinetic_fragments.size() - 1, -1, -1):
+        var piece: Dictionary = kinetic_fragments[i]
+        var previous: Vector2 = piece["pos"]
+        var vel: Vector2 = piece["vel"]
+        vel += gravity_at(previous) * 0.45 * delta
+        var next := previous + vel * delta
+        piece["pos"] = next
+        piece["vel"] = vel
+        piece["life"] = float(piece["life"]) - delta
+        var removed := not FIELD.has_point(next) or float(piece["life"]) <= 0.0
+        if not removed and not player_destroyed:
+            var closest := Geometry2D.get_closest_point_to_segment(ship_pos, previous, next)
+            if closest.distance_squared_to(ship_pos) <= pow(SHIP_RADIUS + float(piece["radius"]), 2.0):
+                damage_player_hull_direct(float(piece["damage"]), closest)
+                removed = true
+        if not removed:
+            for j in range(targets.size()):
+                if bool(targets[j]["destroyed"]):
+                    continue
+                var enemy_pos: Vector2 = targets[j]["pos"]
+                var closest := Geometry2D.get_closest_point_to_segment(enemy_pos, previous, next)
+                if closest.distance_squared_to(enemy_pos) <= pow(float(targets[j]["radius"]) + float(piece["radius"]), 2.0):
+                    damage_target_hull_direct(j, float(piece["damage"]), closest)
+                    removed = true
+                    break
+        if removed:
+            kinetic_fragments.remove_at(i)
+        else:
+            kinetic_fragments[i] = piece
+
+func draw_asteroids() -> void:
+    for rock in asteroids:
+        var centre: Vector2 = rock["pos"]
+        if absf(centre.x - camera_pos.x) > 1500.0 or absf(centre.y - camera_pos.y) > 1100.0:
+            continue
+        var radius: float = rock["radius"]
+        var angle: float = rock["angle"]
+        var seed: float = rock["seed"]
+        var outline := PackedVector2Array()
+        for n in range(9):
+            var theta := TAU * float(n) / 9.0
+            var shape := 0.86 + 0.12 * sin(seed + float(n) * 3.7)
+            outline.append(centre + Vector2.from_angle(theta + angle) * radius * shape)
+        var integrity := clampf(float(rock["hp"]) / float(rock["max_hp"]), 0.0, 1.0)
+        var tint := Color(0.095, 0.137, 0.167) if float(rock["flash"]) <= 0.0 else Color(0.27, 0.26, 0.23)
+        draw_colored_polygon(outline, tint)
+        var closed := outline.duplicate()
+        closed.append(outline[0])
+        draw_polyline(closed, Color(0.34, 0.45, 0.51), 2.8, true)
+        if integrity < 0.9:
+            var scar := 1.0 - integrity
+            draw_line(centre - Vector2(radius * 0.24, radius * 0.22).rotated(angle),
+                centre + Vector2(radius * scar * 0.40, radius * scar * 0.29).rotated(angle),
+                Color(0.48, 0.54, 0.59, 0.35 + scar * 0.55), 2.5, true)
+        if show_arcs:
+            var hp_ratio := clampf(integrity, 0.0, 1.0)
+            draw_line(centre + Vector2(-radius, radius + 8.0),
+                centre + Vector2(-radius + radius * 2.0 * hp_ratio, radius + 8.0),
+                PORT_COLOR, 2.0, true)
+
+func draw_kinetic_fragments() -> void:
+    for piece in kinetic_fragments:
+        var pos: Vector2 = piece["pos"]
+        var vel: Vector2 = piece["vel"]
+        var direction := vel.normalized() if vel.length_squared() > 0.01 else Vector2.UP
+        draw_line(pos - direction * 7.0, pos + direction * 5.0,
+            Color(0.78, 0.72, 0.60, 0.94), maxf(1.3, float(piece["radius"]) * 0.57), true)
+        draw_circle(pos, float(piece["radius"]) * 0.65, Color(0.48, 0.56, 0.58, 0.94))
+
 func setup_targets() -> void:
     # Two mobile enemies: an arc-aware broadside cruiser and a nimble
     # forward-firing frigate. Both obey inertia and their own turn limits.
