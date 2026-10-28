@@ -1,3 +1,43 @@
+# OmegaWar 0.2 — Flight Dynamics Test Lab
+
+This branch launches a **clean flight-test arena** by default, based on
+`codex/omega-war-classic-baseline`. The original playable classic scene is
+still available at `res://scenes/main.tscn` and its regression tests remain
+in `tests/smoke.gd`.
+
+## Flight-lab scope
+
+- Only the **outer perimeter walls** remain: no centre core, asteroids or
+  gravity field. Normal wall ricochets and projectile physics remain active.
+- Each test wave contains **two or three ordinary Local Drones**. Difficulty
+  escalation and between-wave upgrades are suspended in the flight lab.
+- The right-hand **live loadout panel** switches between Light, Medium and
+  Heavy hulls and Standard, High-Thrust, Vector Drive and Overdrive engines.
+- A **0.50–3.00× thrust/braking test multiplier** is available, with hard
+  engineering ceilings of **3× classic acceleration, braking and speed**.
+- The bottom HUD shows current velocity, top speed, thrust, braking,
+  rotation rate, effective mass, heat, hull health and rockets.
+- **Reset Position + Velocity** returns the ship to the starting point without
+  restarting its wave or changing the selected hull and engine.
+- Ship mass affects ramming impulses and rocket knockback; the selected
+  hull also changes sprite size and collision footprint. There is no passive
+  velocity drag.
+
+The **Medium + Standard** combination retains classic movement:
+145 units/s² acceleration, 265 units/s² braking, 320 units/s top speed and
+3.5 radians/s turning. Other profiles are intentionally exaggerated to
+evaluate handling before balancing.
+
+Run the tests using Godot 4.5.2:
+
+```sh
+godot --headless --path . --editor --quit
+godot --headless --path . --script tests/smoke.gd
+godot --headless --path . --script tests/flight_test.gd
+```
+
+---
+
 # OmegaWar — classic baseline
 
 A **Godot 4.5.2** vector-style arcade shooter inspired by the momentum combat
