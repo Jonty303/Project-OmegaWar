@@ -814,12 +814,12 @@ func run() -> void:
 	game.spawn_shot(Vector2(345, 250), Vector2(415, 0), false)
 	game.step_shots(0.14)
 	check(ally_bot.health == ally_bot.max_health and ally_bot.shields == ally_bot.max_shields - 1.0, "Allied shield hit registers without damaging hull")
-	check(witness.searching and witness.search_goal.is_equal_approx(ally_bot.position), "Drone witnesses a shot striking ally in its forward cone")
+	check(witness.searching and witness.search_goal.x < witness.position.x, "Witness looks back along incoming firing line, not at damaged ally")
 	check(witness.alert_flash > 0.0, "Witness shows an immediate amber alert")
 	check(witness.last_seen_position == Vector2.ZERO and not witness.spotted_once, "Shot never reveals unseen attacker coordinates")
 	witness.step(0.12, Vector2(1040, 610), game.arena)
 	check(not witness.ready_to_fire(Vector2(1040, 610), game.arena), "Alerted drone cannot fire without actual contact")
-	check(witness.velocity.x > 0.0, "Alerted drone starts investigating the hit")
+	check(witness.velocity.x < 0.0, "Witness investigates the shot source instead of approaching victim")
 	game.enemies.clear()
 	witness.free()
 	ally_bot.free()
@@ -950,6 +950,9 @@ func run() -> void:
 	check(game.effects.size() > particles_before, "Body collision spawns debris")
 	check(game.ship.hull == 2, "High-speed ram deals damage")
 
+	# Test the Pulse-specific death cascade using guaranteed activation
+	# before trying its probability-based upgrade in normal gameplay.
+	game.ship.weapon.cascade_chance = 1.0
 	# Shooting the drone removes it and produces a separate impact cloud.
 	target.health = 1
 	target.position = Vector2(320, 210)
@@ -959,9 +962,83 @@ func run() -> void:
 	game.step_shots(0.2)
 	check(game.enemies.is_empty() and game.score == 100, "Bullet kills drone")
 	check(game.effects.size() > particles_before, "Bullet hit emits fragments")
+	check(game.shots.size() == 8, "Destroyed enemy emits eight short-range radial pulses")
+	if game.shots.size() == 8:
+		var angles: Array[bool] = [false, false, false, false, false, false, false, false]
+		for shard in game.shots:
+			check(shard.cascade_shard and shard.max_range == game.CASCADE_SHARD_RANGE and shard.damage == game.CASCADE_SHARD_DAMAGE, "Cascade shards are short-range and non-recursive")
+			angles[roundi(wrapf(shard.velocity.angle(), 0.0, TAU) / (TAU / 8.0)) % 8] = true
+		check(not angles.has(false), "Cascade radiates in all eight compass directions")
+	for shard in game.shots:
+		shard.free()
+	game.shots.clear()
+	game.ship.weapon.cascade_chance = 0.0
+	game.ship.secondary.ammo = 1
+	var health_before_bonus: float = game.ship.hull
 
 	game._physics_process(0.01)
-	check(game.waiting_for_wave and is_equal_approx(game.wave_delay, 5.0), "Five-second delay after clear")
+	check(game.bonus_active and game.bonus_layer.visible, "Final enemy triggers an interactive wave bonus before countdown")
+	check(game.waiting_for_wave and is_equal_approx(game.wave_delay, 5.0), "Next wave waits five seconds after a bonus selection")
+	check(game.bonus_choices.size() == 3, "Upgrade screen offers exactly three choices")
+	var selected_upgrade_ids := {}
+	for choice in game.bonus_choices:
+		selected_upgrade_ids[choice["id"]] = true
+	check(selected_upgrade_ids.size() == 3, "Choices are distinct within each wave")
+	check(is_equal_approx(game.ship.hull, minf(game.ship.max_hull, health_before_bonus + game.ship.max_hull * 0.25)), "Wave restores 25 percent of maximum hull HP")
+	check(game.ship.shields == game.ship.max_shields, "Wave restores full shields")
+	check(game.ship.secondary.ammo == 4, "Wave restocks half of six-rocket capacity without exceeding maximum")
+	var bonus_velocity: Vector2 = game.ship.velocity
+	game._physics_process(1.0)
+	check(game.bonus_active and game.ship.velocity.is_equal_approx(bonus_velocity) and game.wave_delay == 5.0, "Upgrade selection freezes gameplay and wave countdown")
+	var bonus_name: String = game.bonus_choices[0]["id"]
+	var upgrade_confirm := InputEventJoypadButton.new()
+	upgrade_confirm.button_index = JOY_BUTTON_A
+	upgrade_confirm.pressed = true
+	game._input(upgrade_confirm)
+	check(not game.bonus_active and not game.bonus_layer.visible, "Joypad A selects focused wave bonus")
+	check(game.upgrade_counts.get(bonus_name, 0) == 1, "Selected upgrade persists in the run")
+	check(game.waiting_for_wave and is_equal_approx(game.wave_delay, 5.0), "Countdown begins after selecting upgrade")
+
+	# Every upgrade can stack, not just the first random offer.
+	var upgrade_fixture = game.Ship.new()
+	check(game.Upgrades.offer(upgrade_fixture).size() == 3, "Equipment-filtered deck always provides three cards")
+	game.Upgrades.apply(upgrade_fixture, "thrust")
+	game.Upgrades.apply(upgrade_fixture, "thrust")
+	check(is_equal_approx(upgrade_fixture.thrust_multiplier, 1.3), "Acceleration upgrades accumulate")
+	game.Upgrades.apply(upgrade_fixture, "rate")
+	game.Upgrades.apply(upgrade_fixture, "rate")
+	check(upgrade_fixture.weapon.fire_interval < 0.24, "Pulse fire-rate upgrades accumulate")
+	game.Upgrades.apply(upgrade_fixture, "damage")
+	game.Upgrades.apply(upgrade_fixture, "damage")
+	check(upgrade_fixture.weapon.damage == 1.5, "Pulse damage upgrades accumulate")
+	game.Upgrades.apply(upgrade_fixture, "size")
+	game.Upgrades.apply(upgrade_fixture, "size")
+	check(upgrade_fixture.weapon.shot_radius == 4.5, "Pulse projectile size upgrades accumulate")
+	game.Upgrades.apply(upgrade_fixture, "double")
+	game.Upgrades.apply(upgrade_fixture, "double")
+	check(upgrade_fixture.weapon.projectile_count == 3, "Repeated split upgrades add another projectile")
+	var pulse_volley: Array[Dictionary] = upgrade_fixture.weapon.fire(Vector2(300, 300), Vector2.RIGHT)
+	check(pulse_volley.size() == 3 and pulse_volley[0]["radius"] == 4.5 and pulse_volley[0]["damage"] == 1.5, "Larger multi-pulses inherit upgraded damage and hit radius")
+	game.Upgrades.apply(upgrade_fixture, "hull")
+	game.Upgrades.apply(upgrade_fixture, "hull")
+	check(upgrade_fixture.max_hull == 5.0 and upgrade_fixture.hull == 5.0, "Structure upgrades raise maximum and current health")
+	game.Upgrades.apply(upgrade_fixture, "shield")
+	game.Upgrades.apply(upgrade_fixture, "shield")
+	check(upgrade_fixture.max_shields == 4.0 and upgrade_fixture.shields == 4.0, "Shield upgrades raise maximum and current shields")
+	game.Upgrades.apply(upgrade_fixture, "blast")
+	game.Upgrades.apply(upgrade_fixture, "blast")
+	check(upgrade_fixture.secondary.blast_radius > 136.0, "Rocket explosion radius upgrades compound")
+	game.Upgrades.apply(upgrade_fixture, "cascade")
+	game.Upgrades.apply(upgrade_fixture, "cascade")
+	check(is_equal_approx(upgrade_fixture.weapon.cascade_chance, 0.12), "Pulse-specific eight-way cascade chance stacks")
+	upgrade_fixture.free()
+
+	# Programmatically generated effects are deliberately quiet and short.
+	for kind in ["pulse", "missile", "explosion", "rebound"]:
+		check(game.sound_bus.streams.has(kind) and game.sound_bus.streams[kind].data.size() > 100, "Procedural sound generated for " + kind)
+		check(game.SoundBus.VOLUMES[kind] <= -20.0 and game.SoundBus.LENGTHS[kind] <= 0.31, "Sound is short and subtle: " + kind)
+	check(game.SoundBus.VOLUMES["rebound"] < game.SoundBus.VOLUMES["pulse"] - 5.0, "Rebound is noticeably quieter than shots")
+
 	var pause_button := InputEventJoypadButton.new()
 	pause_button.button_index = JOY_BUTTON_START
 	pause_button.pressed = true
