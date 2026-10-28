@@ -209,7 +209,7 @@ func setup_targets() -> void:
             "flash": 0.0, "reload": 2.1, "name": "HOSTILE FRIGATE", "kind": "frigate",
             "speed": 142.0, "turn_rate": 1.15, "accel": 66.0, "reload_time": 0.85,
             "range": FRIGATE_WEAPON_RANGE, "damage": 1.0, "radius": 29.0,
-            "destroyed": false, "missile_reload": 999.0}
+            "destroyed": false, "missile_reload": 5.8}
     ]
 
 func reset_test() -> void:
@@ -642,9 +642,17 @@ func advance_enemies(delta: float) -> void:
         enemy["pos"] = future
         enemy["velocity"] = vel
         enemy["reload"] = maxf(0.0, float(enemy["reload"]) - delta)
+        if enemy["kind"] == "frigate":
+            enemy["missile_reload"] = maxf(0.0, float(enemy["missile_reload"]) - delta)
         targets[j] = enemy
         if not bool(enemy["destroyed"]) and float(enemy["reload"]) <= 0.0:
             fire_enemy(j)
+        if not bool(enemy["destroyed"]) and enemy["kind"] == "frigate" and float(enemy["missile_reload"]) <= 0.0 and not player_destroyed:
+            # A small hostile salvo exists so the player can practice
+            # physically shooting missiles out of the sky.
+            launch_missiles(2, j)
+            enemy["missile_reload"] = FRIGATE_MISSILE_INTERVAL
+            targets[j] = enemy
 
 func fire_enemy(j: int) -> void:
     if player_destroyed:
@@ -968,6 +976,33 @@ func check_encounter_result() -> void:
         encounter_finished = true
         announce("BATTLE WON - PRESS R TO RESTART")
 
+func shot_intercepts_missile(shot_start: Vector2, shot_end: Vector2, shot_hostile: bool, delta: float) -> bool:
+    # Swept capsule test: shots are small but fast. Check the missile's
+    # predicted movement as well as the shell segment to prevent tunnelling.
+    # Opposing factions only; our own guns won't destroy our own salvo.
+    var radius_squared := MISSILE_INTERCEPT_RADIUS * MISSILE_INTERCEPT_RADIUS
+    for i in range(missiles.size() - 1, -1, -1):
+        var missile: Dictionary = missiles[i]
+        if bool(missile["hostile"]) == shot_hostile:
+            continue
+        var m_start: Vector2 = missile["pos"]
+        var m_end: Vector2 = m_start + Vector2(missile["vel"]) * delta
+        var at_start := Geometry2D.get_closest_point_to_segment(m_start, shot_start, shot_end)
+        var at_end := Geometry2D.get_closest_point_to_segment(m_end, shot_start, shot_end)
+        var at_shot_start := Geometry2D.get_closest_point_to_segment(shot_start, m_start, m_end)
+        var at_shot_end := Geometry2D.get_closest_point_to_segment(shot_end, m_start, m_end)
+        var missed_squared := minf(
+            minf(m_start.distance_squared_to(at_start), m_end.distance_squared_to(at_end)),
+            minf(shot_start.distance_squared_to(at_shot_start), shot_end.distance_squared_to(at_shot_end)))
+        var crossing: Variant = Geometry2D.segment_intersects_segment(shot_start, shot_end, m_start, m_end)
+        if missed_squared > radius_squared and crossing == null:
+            continue
+        var detonation: Vector2 = crossing if crossing != null else at_start
+        missile_detonate(detonation, -1, false, bool(missile["hostile"]))
+        missiles.remove_at(i)
+        return true
+    return false
+
 func advance_shots(delta: float) -> void:
     for i in range(shots.size() - 1, -1, -1):
         var bullet: Dictionary = shots[i]
@@ -986,6 +1021,8 @@ func advance_shots(delta: float) -> void:
                     impacts.append({"pos": near_rock, "life": 0.32, "color": MUTED})
                     expired = true
                     break
+        if not expired and shot_intercepts_missile(old, next, bool(bullet["hostile"]), delta):
+            expired = true
         if not expired:
             if bool(bullet["hostile"]):
                 if not player_destroyed:
