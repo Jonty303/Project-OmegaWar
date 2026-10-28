@@ -10,7 +10,7 @@ var well_pos := Vector2(4490.0, 2310.0)
 var well_radius := 520.0
 var stars := PackedVector2Array()
 
-func configure(bounds: Rect2, gravity_position: Vector2, gravity_radius: float, rocks: Array[Dictionary]) -> void:
+func configure(bounds: Rect2, gravity_position: Vector2, gravity_radius: float) -> void:
     battlefield = bounds
     well_pos = gravity_position
     well_radius = gravity_radius
