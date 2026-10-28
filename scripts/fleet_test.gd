@@ -20,6 +20,16 @@ const REVERSE_THRUST := 31.0
 const MAX_REVERSE_SPEED := 67.0
 const ASTEROID_SAFE_IMPACT := 20.0
 const TRAIL_INTERVAL := 0.065
+const MISSILES_PER_SALVO := 4
+const MISSILE_COLD_TIME := 1.0
+const MISSILE_RELOAD := 5.5
+const MISSILE_MAX_SPEED := 340.0
+const MISSILE_ACCEL := 370.0
+const MISSILE_TURN_RATE := 3.0
+const MISSILE_DIRECT_DAMAGE := 5.0
+const MISSILE_BURST_DAMAGE := 1.7
+const MISSILE_BURST_RADIUS := 102.0
+const MISSILE_FUEL_LIFE := 7.5
 const BROADSIDE_INTERVAL := 0.56
 const SHELL_SPEED := 390.0
 const BEAM_EXPAND_SPEED := 1450.0
@@ -54,6 +64,9 @@ var charge := 0.0
 var beam_recovery := 0.0
 var beam_charging := false
 var trail_tick := 0.0
+var missile_cooldown := 0.0
+var missile_boom_audio := 0.0
+var missiles: Array[Dictionary] = []
 var ion_trails: Array[Dictionary] = []
 var beam_path: PackedVector2Array = PackedVector2Array()
 var beam_visible := 0.0
@@ -203,6 +216,9 @@ func reset_test() -> void:
     shots.clear()
     impacts.clear()
     debris.clear()
+    missiles.clear()
+    missile_cooldown = 0.0
+    missile_boom_audio = 0.0
     ion_trails.clear()
     trail_tick = 0.0
     player_shield_flash = 0.0
@@ -234,6 +250,8 @@ func _physics_process(delta: float) -> void:
         view_zoom = minf(0.78, view_zoom + 0.07)
 
     beam_recovery = maxf(0.0, beam_recovery - delta)
+    missile_cooldown = maxf(0.0, missile_cooldown - delta)
+    missile_boom_audio = maxf(0.0, missile_boom_audio - delta)
     port_cooldown = maxf(0.0, port_cooldown - delta)
     starboard_cooldown = maxf(0.0, starboard_cooldown - delta)
     port_flash = maxf(0.0, port_flash - delta)
@@ -256,6 +274,8 @@ func _physics_process(delta: float) -> void:
         starboard_order = not starboard_order
         starboard_target = -1
         announce("STARBOARD BATTERIES - " + ("OPEN FIRE" if starboard_order else "CEASE FIRE"))
+    if Input.is_action_just_pressed("fc_missile") and not encounter_finished and missile_cooldown <= 0.0:
+        launch_missiles(MISSILES_PER_SALVO)
 
     # One press arms a five-second firing order. The second press cancels.
     if Input.is_action_just_pressed("fc_beam") and not encounter_finished:
@@ -290,6 +310,7 @@ func _physics_process(delta: float) -> void:
         process_battery_order(1.0)
 
     advance_shots(delta)
+    advance_missiles(delta)
     advance_beam(delta)
     recharge_shields(delta)
     update_ion_trails(delta)
@@ -633,6 +654,184 @@ func spawn_enemy_shell(origin: Vector2, aim: Vector2, damage: float, dispersion:
         "life": 2.2, "side": 0.0, "hostile": true, "damage": damage
     })
 
+# Individual lightweight projectiles: the salvo count is data-driven so the
+# exact same logic can support larger upgraded missile swarms later.
+func launch_missiles(count: int) -> void:
+    var amount := clampi(count, 1, 96)
+    var stern := Vector2.DOWN.rotated(ship_angle)
+    var wing := Vector2.RIGHT.rotated(ship_angle)
+    for n in range(amount):
+        var slot := float(n) - (float(amount) - 1.0) * 0.5
+        var spread := clampf(slot * 13.0, -92.0, 92.0)
+        var origin := ship_pos + stern * (52.0 + absf(slot) * 3.0) + wing * spread
+        var ejection := stern * (60.0 + float(n % 3) * 7.0) + wing * slot * 12.0
+        missiles.append({
+            "pos": origin, "previous": origin,
+            "vel": velocity * 0.73 + ejection,
+            "age": 0.0, "life": MISSILE_FUEL_LIFE,
+            "ignited": false, "target": -1,
+            "last_distance": INF,
+            "trail": [], "trail_clock": 0.0
+        })
+    missile_cooldown = MISSILE_RELOAD
+    announce("AFT MISSILE SALVO - %d COLD LAUNCHED" % amount)
+    sound_bus.play("missile")
+
+func nearest_missile_target(pos: Vector2) -> int:
+    var best := -1
+    var best_sq := INF
+    for j in range(targets.size()):
+        var enemy: Dictionary = targets[j]
+        if bool(enemy["destroyed"]):
+            continue
+        var sq := pos.distance_squared_to(enemy["pos"])
+        if sq < best_sq:
+            best_sq = sq
+            best = j
+    return best
+
+func missile_steering(pos: Vector2, current_velocity: Vector2, desired: Vector2) -> Vector2:
+    # Short-range anticipatory avoidance. Steer tangentially round asteroids,
+    # rather than simply pushing away (which can trap homing missiles).
+    var speed := maxf(current_velocity.length(), 50.0)
+    var direction := current_velocity.normalized() if current_velocity.length_squared() > 1.0 else desired
+    var look_ahead := 115.0 + minf(speed * 0.38, 100.0)
+    var look_end := pos + direction * look_ahead
+    var adjusted := desired
+    var nearest_threat := INF
+    for rock in asteroids:
+        var centre: Vector2 = rock["pos"]
+        var clearance := float(rock["radius"]) + 38.0
+        var nearest := Geometry2D.get_closest_point_to_segment(centre, pos, look_end)
+        var separation := centre.distance_to(nearest)
+        if separation < clearance and separation < nearest_threat:
+            nearest_threat = separation
+            var away := (pos - centre).normalized()
+            if away.length_squared() < 0.01:
+                away = Vector2.UP
+            var tangent := Vector2(-away.y, away.x)
+            if tangent.dot(desired) < 0.0:
+                tangent = -tangent
+            adjusted = (away * 1.35 + tangent * 0.95).normalized()
+    # Player and future friendly vessels are protected from friendly missiles.
+    # Ignore the launch hull for the first moment only as the missiles exit.
+    var own_radius := SHIP_RADIUS + 40.0
+    var near_player := Geometry2D.get_closest_point_to_segment(ship_pos, pos, look_end)
+    if near_player.distance_to(ship_pos) < own_radius and pos.distance_to(ship_pos) > 66.0:
+        var away_player := (pos - ship_pos).normalized()
+        if away_player.length_squared() > 0.01:
+            adjusted = (away_player * 1.8 + adjusted * 0.5).normalized()
+    return adjusted
+
+func advance_missiles(delta: float) -> void:
+    for i in range(missiles.size() - 1, -1, -1):
+        var m: Dictionary = missiles[i]
+        var previous: Vector2 = m["pos"]
+        var age := float(m["age"]) + delta
+        m["age"] = age
+        m["life"] = float(m["life"]) - delta
+        var v: Vector2 = m["vel"]
+        var target_index: int = int(m["target"])
+        if not bool(m["ignited"]) and age >= MISSILE_COLD_TIME:
+            m["ignited"] = true
+            target_index = nearest_missile_target(previous)
+            m["target"] = target_index
+        if bool(m["ignited"]):
+            if target_index < 0 or target_index >= targets.size() or bool(targets[target_index]["destroyed"]):
+                target_index = nearest_missile_target(previous)
+                m["target"] = target_index
+                m["last_distance"] = INF
+            if target_index >= 0:
+                var enemy: Dictionary = targets[target_index]
+                var offset: Vector2 = enemy["pos"] - previous
+                var intercept := (offset + Vector2(enemy["velocity"]) * clampf(offset.length() / MISSILE_MAX_SPEED, 0.0, 1.5)).normalized()
+                var guidance := missile_steering(previous, v, intercept)
+                var speed := v.length()
+                var current_heading := v.angle() if speed > 1.0 else guidance.angle()
+                var turn := wrapf(guidance.angle() - current_heading, -PI, PI)
+                var new_heading := current_heading + clampf(turn, -MISSILE_TURN_RATE * delta, MISSILE_TURN_RATE * delta)
+                speed = minf(MISSILE_MAX_SPEED, speed + MISSILE_ACCEL * delta)
+                v = Vector2.from_angle(new_heading) * speed
+            else:
+                v = v.move_toward(Vector2.ZERO, 25.0 * delta)
+        else:
+            v += gravity_at(previous) * 0.24 * delta
+        var next := previous + v * delta
+        m["previous"] = previous
+        m["pos"] = next
+        m["vel"] = v
+        m["trail_clock"] = float(m["trail_clock"]) - delta
+        if bool(m["ignited"]) and float(m["trail_clock"]) <= 0.0:
+            var trail: Array = m["trail"]
+            trail.append(next)
+            if trail.size() > 17:
+                trail.remove_at(0)
+            m["trail"] = trail
+            m["trail_clock"] = 0.062
+        var removed := false
+        # Swept tests avoid tunnelling through rocks or a fast-moving hull.
+        for rock in asteroids:
+            var centre: Vector2 = rock["pos"]
+            var near := Geometry2D.get_closest_point_to_segment(centre, previous, next)
+            if near.distance_squared_to(centre) < pow(float(rock["radius"]) + 3.0, 2.0):
+                missile_detonate(next, -1, false)
+                removed = true
+                break
+        if not removed and bool(m["ignited"]) and target_index >= 0:
+            var enemy_pos: Vector2 = targets[target_index]["pos"]
+            var near_target := Geometry2D.get_closest_point_to_segment(enemy_pos, previous, next)
+            var enemy_radius: float = targets[target_index]["radius"]
+            var distance := next.distance_to(enemy_pos)
+            if near_target.distance_to(enemy_pos) <= enemy_radius + 5.0:
+                missile_detonate(near_target, target_index, true)
+                removed = true
+            elif age > MISSILE_COLD_TIME + 0.5 and float(m["last_distance"]) < enemy_radius + 83.0 and distance > float(m["last_distance"]) + 2.5:
+                # Missile missed a hard turn: detonate its proximity warhead.
+                missile_detonate(next, -1, false)
+                removed = true
+            m["last_distance"] = distance
+        if not removed and (float(m["life"]) <= 0.0 or not FIELD.has_point(next)):
+            missile_detonate(next, -1, false)
+            removed = true
+        if removed:
+            missiles.remove_at(i)
+        else:
+            missiles[i] = m
+
+func missile_detonate(pos: Vector2, direct_target: int, direct_hit: bool) -> void:
+    impacts.append({"pos": pos, "life": 0.32, "color": BEAM_COLOR})
+    create_explosion(pos, 4)
+    if direct_hit and direct_target >= 0 and not bool(targets[direct_target]["destroyed"]):
+        damage_target(direct_target, MISSILE_DIRECT_DAMAGE, pos)
+    else:
+        # Splash never damages the player's ship or future allies.
+        for j in range(targets.size()):
+            var enemy: Dictionary = targets[j]
+            if bool(enemy["destroyed"]):
+                continue
+            var reach := MISSILE_BURST_RADIUS + float(enemy["radius"]) * 0.3
+            var distance := pos.distance_to(enemy["pos"])
+            if distance < reach:
+                damage_target(j, MISSILE_BURST_DAMAGE * (1.0 - 0.55 * distance / reach), pos)
+    if missile_boom_audio <= 0.0:
+        sound_bus.play("explosion")
+        missile_boom_audio = 0.20
+
+func draw_missiles() -> void:
+    for m in missiles:
+        var pos: Vector2 = m["pos"]
+        var v: Vector2 = m["vel"]
+        var direction := v.normalized() if v.length_squared() > 0.1 else Vector2.DOWN
+        if bool(m["ignited"]):
+            var trace: Array = m["trail"]
+            for k in range(1, trace.size()):
+                var fraction := float(k) / float(trace.size())
+                draw_line(trace[k - 1], trace[k], Color(0.22, 0.70, 1.0, 0.12 + 0.55 * fraction), 1.0 + fraction * 2.2, true)
+            draw_line(pos - direction * 19.0, pos - direction * 6.0, Color(0.95, 0.58, 0.23, 0.55), 5.0, true)
+            draw_line(pos - direction * 15.0, pos - direction * 4.0, Color(0.94, 0.96, 1.0, 0.90), 2.0, true)
+        draw_line(pos - direction * 4.0, pos + direction * 6.0, WHITE, 2.8, true)
+        draw_circle(pos + direction * 4.0, 2.3, BEAM_COLOR)
+
 func recharge_shields(delta: float) -> void:
     player_shield_delay = maxf(0.0, player_shield_delay - delta)
     player_shield_flash = maxf(0.0, player_shield_flash - delta)
@@ -825,6 +1024,7 @@ func _draw() -> void:
     draw_ion_trails()
     draw_targets()
     draw_shots()
+    draw_missiles()
     draw_ship()
     draw_beam()
     draw_impacts()
