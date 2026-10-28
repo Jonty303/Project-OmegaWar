@@ -44,6 +44,39 @@ var bonus_buttons: Array[Button] = []
 var bonus_choices: Array[Dictionary] = []
 var bonus_active := false
 var upgrade_counts: Dictionary = {}
+# Four independent, deliberately simple automatic test-scaling tracks.
+const DIFFICULTY_OPTIONS := ["count", "damage", "speed", "health"]
+var difficulty_levels := {"count":0, "damage":0, "speed":0, "health":0}
+var last_difficulty := "NONE"
+const DIFFICULTY_PROJECTILE_FACTOR := 1.05
+const DIFFICULTY_HEALTH_STEP := 0.5
+
+func enemy_damage(base: float) -> float:
+	return base * pow(DIFFICULTY_PROJECTILE_FACTOR, int(difficulty_levels["damage"]))
+
+func enemy_shot_speed(base: float) -> float:
+	return base * pow(DIFFICULTY_PROJECTILE_FACTOR, int(difficulty_levels["speed"]))
+
+func increase_difficulty(category: String) -> bool:
+	if not difficulty_levels.has(category):
+		return false
+	difficulty_levels[category] += 1
+	match category:
+		"count":
+			last_difficulty = "+1 LOCAL DRONE"
+		"damage":
+			last_difficulty = "+5% ENEMY SHOT / MISSILE DAMAGE"
+		"speed":
+			last_difficulty = "+5% ENEMY SHOT / MISSILE SPEED"
+		"health":
+			last_difficulty = "+0.5 HULL HP TO ALL ENEMIES"
+	return true
+
+func scale_enemy_health(enemy: Node2D) -> void:
+	var bonus: float = float(difficulty_levels["health"]) * DIFFICULTY_HEALTH_STEP
+	enemy.max_health += bonus
+	enemy.health += bonus
+
 const CASCADE_SHARD_RANGE := 175.0
 const CASCADE_SHARD_SPEED := 360.0
 const CASCADE_SHARD_DAMAGE := 0.40
@@ -182,6 +215,8 @@ func finish_wave() -> void:
 	ship.shields = ship.max_shields
 	ship.secondary.ammo = mini(ship.secondary.MAX_AMMO, ship.secondary.ammo + ceili(ship.secondary.MAX_AMMO * 0.50))
 	ship.queue_redraw()
+	# Exactly ONE of four difficulty changes is selected per completed wave.
+	increase_difficulty(DIFFICULTY_OPTIONS.pick_random())
 	waiting_for_wave = true
 	wave_delay = 5.0
 	bonus_choices = Upgrades.offer(ship)
@@ -190,7 +225,7 @@ func finish_wave() -> void:
 		var count: int = int(upgrade_counts.get(choice["id"], 0))
 		var stack_label := "  (owned %d)" % count if count > 0 else ""
 		bonus_buttons[i].text = "%s%s\n%s" % [choice["title"], stack_label, choice["description"]]
-	bonus_title.text = "WAVE %02d COMPLETE  /  SELECT ONE UPGRADE" % wave
+	bonus_title.text = "WAVE %02d COMPLETE / PICK ONE UPGRADE\nNEXT WAVE: %s" % [wave, last_difficulty]
 	bonus_active = true
 	bonus_layer.visible = true
 	bonus_buttons[0].grab_focus()
@@ -279,6 +314,9 @@ func reset() -> void:
 	bonus_layer.visible = false
 	bonus_choices.clear()
 	upgrade_counts.clear()
+	for category in DIFFICULTY_OPTIONS:
+		difficulty_levels[category] = 0
+	last_difficulty = "NONE"
 	game_over = false
 	dying = false
 	death_timer = 0.0
@@ -336,6 +374,7 @@ func _physics_process(delta: float) -> void:
 	if paused or game_over or bonus_active:
 		return
 	sound_bus.advance(delta)
+	arena.advance_gravity(delta)
 	arena.advance_flashes(delta)
 	step_effects(delta)
 	arena.set_drone_bodies(enemies)
@@ -351,6 +390,7 @@ func _physics_process(delta: float) -> void:
 			set_paused(true)
 		update_hud()
 		return
+	arena.pull_body(ship, delta)
 	ship.step(delta, arena)
 	if Input.is_action_pressed("fire"):
 		var volley: Array[Dictionary] = ship.weapon.fire(ship.position, Vector2.UP.rotated(ship.rotation))
@@ -362,6 +402,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("fire_secondary"):
 		fire_player_rocket()
 	for enemy in enemies:
+		arena.pull_body(enemy, delta)
 		if enemy.is_repair_bot:
 			enemy.step_support(delta, enemies, arena)
 		else:
@@ -370,7 +411,7 @@ func _physics_process(delta: float) -> void:
 				if enemy.is_missile_drone:
 					launch_enemy_homing_missile(enemy)
 				else:
-					spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * 225.0, true)
+					spawn_shot(enemy.muzzle_position(), enemy.turret_direction() * enemy_shot_speed(225.0), true, enemy_damage(1.0))
 					sound_bus.play("pulse")
 				enemy.fired()
 	resolve_collisions()
@@ -554,6 +595,7 @@ func step_shots(delta: float) -> void:
 					break
 				if not shot.hostile:
 					alert_repair_bots_to_fire(shot.position, shot.velocity)
+				shot.velocity += arena.gravity_at(shot.position) * delta / float(steps)
 				arena.move_shot(shot, delta / float(steps))
 				if shot.dissolving:
 					break # Hit heavy asteroid cover: no damage or ricochet.
@@ -606,7 +648,9 @@ func launch_enemy_homing_missile(enemy: Node2D) -> void:
 		return
 	var missile := HomingMissile.new()
 	missile.position = origin
-	missile.velocity = enemy.turret_direction() * HomingMissile.SPEED
+	missile.cruise_speed = enemy_shot_speed(HomingMissile.SPEED)
+	missile.velocity = enemy.turret_direction() * missile.cruise_speed
+	missile.damage = enemy_damage(HomingMissile.DAMAGE)
 	missile.sync_visual_heading()
 	homing_missiles.append(missile)
 	add_child(missile)
@@ -623,6 +667,8 @@ func step_homing_missiles(delta: float) -> void:
 				missile.steer(delta, ship.position)
 			var substeps: int = maxi(1, int(ceil(missile.velocity.length() * delta / 3.0)))
 			for substep in range(substeps):
+				missile.velocity += arena.gravity_at(missile.position) * delta / float(substeps)
+				missile.sync_visual_heading()
 				var next: Vector2 = missile.position + missile.velocity * (delta / float(substeps))
 				# Missiles NEVER bounce: both the core and exterior walls
 				# count as barriers that trigger an immediate explosion.
@@ -727,6 +773,7 @@ func step_rockets(delta: float) -> void:
 			# a ship, a dense rock, or a narrow section of arena wall.
 			var substeps: int = maxi(1, int(ceil(rocket.velocity.length() * delta / 3.0)))
 			for substep in range(substeps):
+				rocket.velocity += arena.gravity_at(rocket.position) * delta / float(substeps)
 				alert_repair_bots_to_fire(rocket.position, rocket.velocity)
 				arena.move_shot(rocket, delta / float(substeps))
 				if rocket.impact_pending:
@@ -826,17 +873,19 @@ func start_wave() -> void:
 	wave_delay = 0.0
 	# Early mixed waves: two to three sentries, one long-range missile
 	# variant and one support bot. Preserve the original 3-5 hostiles.
-	for i in range(randi_range(2, 3)):
+	for i in range(randi_range(2, 3) + int(difficulty_levels["count"])):
 		var enemy := Enemy.new()
 		enemy.position = safe_position()
 		enemy.fire_timer = randf_range(1.5, 3.0)
 		enemy.turret_angle = randf_range(-PI, PI)
+		scale_enemy_health(enemy)
 		enemies.append(enemy)
 		add_child(enemy)
 
 	var standoff := LongRangeDrone.new()
 	standoff.position = safe_position(LongRangeDrone.COLLISION_RADIUS)
 	standoff.turret_angle = randf_range(-PI, PI)
+	scale_enemy_health(standoff)
 	enemies.append(standoff)
 	add_child(standoff)
 
@@ -860,6 +909,7 @@ func start_wave() -> void:
 			break
 	if not found:
 		bot.position = safe_position(RepairBot.COLLISION_RADIUS)
+	scale_enemy_health(bot)
 	enemies.append(bot)
 	add_child(bot)
 	arena.set_drone_bodies(enemies)
@@ -878,7 +928,7 @@ func on_projectile_rebounded() -> void:
 	sound_bus.play("rebound")
 
 func update_hud() -> void:
-	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HOSTILES %02d" % [score, wave, enemies.size()]
+	hud.text = "OMEGAWAR / CLASSIC    SCORE %05d    WAVE %02d    HOSTILES %02d    TEST THREAT %d" % [score, wave, enemies.size(), int(difficulty_levels["count"]) + int(difficulty_levels["damage"]) + int(difficulty_levels["speed"]) + int(difficulty_levels["health"])]
 	var thrust: int = roundi(Input.get_action_strength("thrust") * 100.0)
 	var retro: int = roundi(maxf(Input.get_action_strength("special"), Input.get_action_strength("brake")) * 100.0)
 	status_hud.text = "SPEED %4.0f   THRUST %3d%%   RETRO %3d%%   HEALTH %.1f/%.0f   SHIELDS %.1f/%.0f   HEAT %3.0f%%\nPRIMARY: PULSE LASER   SECONDARY: ROCKETS %d/%d   READY IN %.1fs   SPECIAL: RETRO   Q/LB: ROCKET" % [
