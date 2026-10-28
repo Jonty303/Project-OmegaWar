@@ -135,7 +135,7 @@ func _ready() -> void:
     # Scenery caches stars, grid and gravity rings; destructible rocks
     # live in the dynamic layer so they can move and fragment.
     environment.show_behind_parent = true
-    environment.configure(FIELD, GRAVITY_CENTER, GRAVITY_RADIUS, asteroids)
+    environment.configure(FIELD, GRAVITY_CENTER, GRAVITY_RADIUS)
     add_child(environment)
     update_environment_transform()
     queue_redraw()
@@ -246,8 +246,9 @@ func damage_asteroid(index: int, amount: float, hit: Vector2, force: Vector2, so
     asteroids.remove_at(index)
     asteroids_destroyed += 1
     create_explosion(hit, 9 if source == "beam" else 6)
-    if source == "beam":
+    if missile_boom_audio <= 0.0:
         sound_bus.play("explosion")
+        missile_boom_audio = 0.16
     var tier: int = rock["tier"]
     var centre: Vector2 = rock["pos"]
     var parent_velocity: Vector2 = rock["velocity"]
@@ -262,7 +263,7 @@ func damage_asteroid(index: int, amount: float, hit: Vector2, force: Vector2, so
             var outward := Vector2.from_angle(angle)
             var speed := randf_range(45.0, 96.0) + (25.0 if source == "beam" else 0.0)
             var child_vel := parent_velocity * 0.70 + outward * speed + force.limit_length(80.0) * 0.20
-            var child_pos := centre + outward * (float(rock["radius"]) * 0.30)
+            var child_pos := centre + outward * (float(rock["radius"]) * 0.74)
             add_asteroid(child_pos, new_radius, tier - 1, child_vel, time_passed)
     else:
         spawn_final_fragments(centre, parent_velocity, force)
