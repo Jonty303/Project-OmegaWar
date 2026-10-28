@@ -2,8 +2,8 @@
 config_version=5
 
 [application]
-config/name="OmegaWar"
-run/main_scene="res://scenes/main.tscn"
+config/name="Omega War: Fleet Command Test"
+run/main_scene="res://scenes/fleet_test.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 
 [display]
